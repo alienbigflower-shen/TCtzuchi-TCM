@@ -4,9 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>醫療部務與跟診排班系統 - 臺中慈濟醫院中醫部</title>
-  <!-- Tailwind CSS 樣式庫 -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- React 與 Supabase SDK -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -25,9 +23,8 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // 🔗 連線至 Supabase (Project ID: htmectgbwqvvuvrajsln)
     const SUPABASE_URL = 'https://htmectgbwqvvuvrajsln.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bWVjdGdid3F2dnV2cmFqc2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MjMyOTksImV4cCI6MjEwMDE5OTI5OX0.5Kd47QjwR_E1Q9yEorLzb49blW-EfpzDmcobP2QjfMw'; // ⚠️ 請務必替換為 Supabase 的 anon public key
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bWVjdGdid3F2dnV2cmFqc2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MjMyOTksImV4cCI6MjEwMDE5OTI5OX0.5Kd47QjwR_E1Q9yEorLzb49blW-EfpzDmcobP2QjfMw'; // ⚠️ 請替換為 Supabase anon public key
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     function App() {
@@ -41,7 +38,6 @@
       const [selectedDept, setSelectedDept] = useState('內一');
       const [focusDate, setFocusDate] = useState('2026-07-22');
 
-      // 資料庫動態資料集
       const [events, setEvents] = useState([]);
       const [rosterShifts, setRosterShifts] = useState([]);
       const [bulletins, setBulletins] = useState([]);
@@ -49,20 +45,17 @@
       const [rosterExceptions, setRosterExceptions] = useState([]);
       const [eventExceptions, setEventExceptions] = useState([]);
 
-      // 彈窗狀態
       const [showEventModal, setShowEventModal] = useState(false);
       const [showRosterModal, setShowRosterModal] = useState(false);
       const [showBulletinModal, setShowBulletinModal] = useState(false);
       const [showPersonnelModal, setShowPersonnelModal] = useState(false);
       const [selectedEvent, setSelectedEvent] = useState(null);
 
-      // 表單狀態
       const [newEvent, setNewEvent] = useState({ editId: null, title: '', day: 22, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', recorder: '', participants: '', note: '', level: '🔴 高度重要', isRecurring: false, weeklyDay: 1 });
       const [newRoster, setNewRoster] = useState({ editId: null, day: 22, dept: '內一', shift: '早診', doctor: '莊佳穎醫師', studentName: '', isRecurring: false, weeklyDay: 1 });
       const [newBulletin, setNewBulletin] = useState({ title: '', content: '', author: '黃仲諄醫師', level: '普通' });
       const [newPerson, setNewPerson] = useState({ category: 'chiefDepartment', name: '', note: '' });
 
-      // 🎨 依診別切換柔和顏色的 Helper Function
       const getShiftStyle = (shiftName) => {
         if (shiftName === '早診') return 'bg-amber-50/90 border-amber-200 text-amber-900 hover:border-amber-400';
         if (shiftName === '午診') return 'bg-sky-50/90 border-sky-200 text-sky-900 hover:border-sky-400';
@@ -70,7 +63,6 @@
         return 'bg-blue-50/90 border-blue-200 text-blue-900 hover:border-blue-400';
       };
 
-      // 🔐 初始化權限與載入 Supabase 資料
       useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
           const currentUser = session?.user ?? null;
@@ -112,30 +104,48 @@
         setLoading(false);
       };
 
-      // 📅 綜合行事曆：新增與編輯事件（含紀錄者與批次新增/刪除）
+      // 📅 修復：行事曆新增/編輯/批次儲存邏輯
       const handleSaveEvent = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！');
+        if (!newEvent.title) return alert('請填寫事件名稱！');
+
         const colorMap = { '🔴 高度重要': '#EF4444', '🟡 中度重要': '#EAB308', '🟢 一般事件': '#10B981' };
         
         const item = {
-          year: currentYear, month: currentMonth, day: parseInt(newEvent.day),
-          title: newEvent.title, time: newEvent.time, location: newEvent.location,
-          instructor: newEvent.instructor, recorder: newEvent.recorder,
-          participants: newEvent.participants, note: newEvent.note,
-          level: newEvent.level, color: colorMap[newEvent.level] || '#3B82F6',
-          is_recurring: newEvent.isRecurring, weekly_day: parseInt(newEvent.weeklyDay)
+          year: currentYear,
+          month: currentMonth,
+          day: newEvent.isRecurring ? null : parseInt(newEvent.day),
+          title: newEvent.title,
+          time: newEvent.time,
+          location: newEvent.location,
+          instructor: newEvent.instructor,
+          recorder: newEvent.recorder,
+          participants: newEvent.participants,
+          note: newEvent.note,
+          level: newEvent.level,
+          color: colorMap[newEvent.level] || '#3B82F6',
+          is_recurring: newEvent.isRecurring,
+          weekly_day: parseInt(newEvent.weeklyDay)
         };
 
         if (newEvent.editId) {
           const { data, error } = await supabase.from('events').update(item).eq('id', newEvent.editId).select();
-          if (!error && data) {
+          if (error) {
+            alert('更新失敗：' + error.message);
+          } else if (data) {
             setEvents(events.map(ev => ev.id === newEvent.editId ? data[0] : ev));
             setSelectedEvent(data[0]);
+            alert('事件更新成功！');
           }
         } else {
           const { data, error } = await supabase.from('events').insert([item]).select();
-          if (!error && data) setEvents([...events, data[0]]);
+          if (error) {
+            alert('新增失敗：' + error.message);
+          } else if (data) {
+            setEvents([...events, data[0]]);
+            alert(newEvent.isRecurring ? '已成功批次排定每週常態事件！' : '事件新增成功！');
+          }
         }
 
         setShowEventModal(false);
@@ -184,7 +194,6 @@
         setShowEventModal(true);
       };
 
-      // 🩺 跟診表：儲存與編輯（支援單日與每週常態門診批次）
       const handleSaveRoster = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
@@ -285,7 +294,6 @@
         }
       };
 
-      // 📢 公佈欄與人員
       const handleAddBulletin = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！');
@@ -334,7 +342,6 @@
 
       return (
         <div class="max-w-7xl mx-auto space-y-6">
-          {/* 頁頭 Header */}
           <header class="bg-white p-6 rounded-2xl shadow-sm border flex flex-wrap justify-between items-center gap-4">
             <div class="flex items-center gap-4">
               <div class="p-4 bg-blue-50 text-blue-600 rounded-2xl font-bold text-[28px]">🏥</div>
@@ -365,7 +372,6 @@
             </div>
           </header>
 
-          {/* 完整 6 大分頁導覽列 */}
           <nav class="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border shadow-sm no-print">
             {[
               { id: 'today', name: '當日焦點', icon: '📍' },
@@ -388,7 +394,7 @@
             ))}
           </nav>
 
-          {/* 1. 當日焦點 (沉穩深翡翠綠色主題) */}
+          {/* 1. 當日焦點 */}
           {currentTab === 'today' && (
             <div class="space-y-6">
               <div class="bg-gradient-to-r from-emerald-800 to-teal-900 p-8 rounded-2xl text-white shadow-md space-y-4">
@@ -436,7 +442,12 @@
                     </div>
                   ))}
 
-                  {events.filter(e => e.year === focusY && e.month === focusM && e.day === focusD).length === 0 && (
+                  {events.filter(e => {
+                    const dayOfWeek = new Date(focusY, focusM - 1, focusD).getDay();
+                    const dateStr = `${focusY}-${String(focusM).padStart(2, '0')}-${String(focusD).padStart(2, '0')}`;
+                    if (eventExceptions.includes(`${e.id}_${dateStr}`)) return false;
+                    return (!e.is_recurring && e.year === focusY && e.month === focusM && e.day === focusD) || (e.is_recurring && e.weekly_day === dayOfWeek);
+                  }).length === 0 && (
                     <div class="text-[22px] text-gray-400 py-10 text-center">該日期尚無排定行程事件</div>
                   )}
                 </div>
@@ -444,7 +455,7 @@
             </div>
           )}
 
-          {/* 2. 綜合行事曆 (包含紀錄者欄位與編輯/刪除) */}
+          {/* 2. 綜合行事曆 */}
           {currentTab === 'calendar' && (
             <div class="bg-white p-6 rounded-2xl border shadow-sm space-y-6">
               <div class="flex flex-wrap justify-between items-center gap-4">
@@ -504,7 +515,7 @@
             </div>
           )}
 
-          {/* 3. 跟診表 (含批次新增/批次刪除) */}
+          {/* 3. 跟診表 */}
           {currentTab === 'roster' && (
             <div class="space-y-6">
               <div class="bg-white p-6 rounded-2xl border shadow-sm space-y-4">
@@ -636,7 +647,7 @@
             </div>
           )}
 
-          {/* 5. 重要規範 (依要求清空與完全精確貼入注意事項，完全不含 emoji) */}
+          {/* 5. 重要規範 */}
           {currentTab === 'rules' && (
             <div class="bg-white p-8 rounded-2xl border shadow-sm space-y-8">
               <div class="border-b pb-4">
@@ -645,21 +656,18 @@
               </div>
 
               <div class="space-y-8">
-                {/* 一、本院醫師守則 (僅留下標題) */}
                 <div class="space-y-4">
                   <h3 class="text-[26px] font-bold text-blue-900 bg-blue-50 p-4 rounded-xl border border-blue-200">
                     一、本院醫師守則
                   </h3>
                 </div>
 
-                {/* 二、住院醫師守則 (僅留下標題) */}
                 <div class="space-y-4">
                   <h3 class="text-[26px] font-bold text-indigo-900 bg-indigo-50 p-4 rounded-xl border border-indigo-200">
                     二、住院醫師守則
                   </h3>
                 </div>
 
-                {/* 三、實習醫師守則 (新增完全正確之內文與注意事項，絕無任何 icon) */}
                 <div class="space-y-4">
                   <h3 class="text-[26px] font-bold text-emerald-900 bg-emerald-50 p-4 rounded-xl border border-emerald-200">
                     三、實習醫師守則
@@ -718,7 +726,7 @@
             </div>
           )}
 
-          {/* 🔍 行事曆事件 Modal (支援記錄者欄位顯示與編輯按鈕) */}
+          {/* 🔍 行事曆事件 Modal */}
           {selectedEvent && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print" onClick={() => setSelectedEvent(null)}>
               <div class="bg-white rounded-3xl max-w-xl w-full p-8 space-y-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -793,7 +801,6 @@
                   <div><label class="block text-gray-700 font-bold mb-1">地點</label><input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：佛堂" /></div>
                   <div><label class="block text-gray-700 font-bold mb-1">主持 / 指導醫師</label><input type="text" value={newEvent.instructor} onChange={e => setNewEvent({...newEvent, instructor: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：Dr. Weber" /></div>
                   
-                  {/* 📝 紀錄者欄位 */}
                   <div class="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
                     <label class="block text-emerald-900 font-bold mb-1">📝 紀錄者 (紀錄醫師)</label>
                     <input type="text" value={newEvent.recorder} onChange={e => setNewEvent({...newEvent, recorder: e.target.value})} class="w-full border rounded-xl p-3 bg-white font-bold" placeholder="例如：蕭鈺廷醫師" />

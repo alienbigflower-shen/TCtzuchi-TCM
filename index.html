@@ -64,7 +64,6 @@
       const [showPersonnelModal, setShowPersonnelModal] = useState(false);
       const [selectedEvent, setSelectedEvent] = useState(null);
 
-      // 📅 重構：簡化欄位與色彩機制（完全不帶 Icon）
       const [newEvent, setNewEvent] = useState({ 
         editId: null, 
         title: '', 
@@ -106,6 +105,13 @@
         if (colorName === '黃色') return '#EAB308';
         if (colorName === '綠色') return '#10B981';
         return '#EF4444';
+      };
+
+      const parsePresenter = (note) => {
+        if (note && note.startsWith('報告醫師：')) {
+          return note.replace('報告醫師：', '');
+        }
+        return '';
       };
 
       useEffect(() => {
@@ -172,7 +178,6 @@
         setLoading(false);
       };
 
-      // 📅 儲存/修改綜合行事曆事件
       const handleSaveEvent = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！');
@@ -301,11 +306,7 @@
       };
 
       const openEditEventModal = (ev) => {
-        let presenterVal = '';
-        if (ev.note && ev.note.startsWith('報告醫師：')) {
-          presenterVal = ev.note.replace('報告醫師：', '');
-        }
-
+        const presenterVal = parsePresenter(ev.note);
         let colorName = '紅色';
         if (ev.color === '#EAB308') colorName = '黃色';
         if (ev.color === '#10B981') colorName = '綠色';
@@ -716,14 +717,14 @@
 
                 <div class="space-y-4">
                   {events.filter(e => e.year === focusY && e.month === focusM && e.day === focusD).map(ev => {
-                    const presenterName = (ev.note && ev.note.startsWith('報告醫師：')) ? ev.note.replace('報告醫師：', '') : '';
+                    const presenterName = parsePresenter(ev.note);
                     return (
                       <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-4 md:p-6 rounded-2xl border-l-8 bg-gray-50 space-y-2 cursor-pointer hover:bg-gray-100 transition" style={{ borderColor: ev.color }}>
                         <div class="text-[20px] md:text-[26px] font-bold text-gray-900">{ev.title}</div>
                         <div class="grid md:grid-cols-2 gap-2 text-[16px] md:text-[22px] text-gray-700">
-                          <div>與會者：<span class="font-bold">{ev.participants || '全員'}</span></div>
+                          <div>與會者：<span class="font-bold">{ev.participants || '無'}</span></div>
                           <div>時間：<span class="font-bold text-emerald-800">{ev.time}</span></div>
-                          <div>地點：<span class="font-bold">{ev.location || '未定'}</span></div>
+                          <div>地點：<span class="font-bold">{ev.location || '無'}</span></div>
                           <div>主持醫師：<span class="font-bold">{ev.instructor || '無'}</span></div>
                           <div>報告醫師：<span class="font-bold">{presenterName || '無'}</span></div>
                           <div>紀錄：<span class="font-bold text-emerald-900">{ev.recorder || '無'}</span></div>
@@ -754,30 +755,39 @@
                 )}
               </div>
 
+              {/* 桌上型 7 欄月曆（卡片完全不帶 Icon，條列所有細項） */}
               <div class="hidden md:grid grid-cols-7 border-t border-l text-[20px]">
                 {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map((d, i) => (
                   <div key={d} class={`p-3 text-center font-bold border-b border-r bg-gray-50 ${i === 0 || i === 6 ? 'text-red-500' : 'text-gray-800'}`}>{d}</div>
                 ))}
                 {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-                  <div key={'empty-' + i} class="p-2 min-h-[140px] border-b border-r bg-gray-50/20"></div>
+                  <div key={'empty-' + i} class="p-2 min-h-[160px] border-b border-r bg-gray-50/20"></div>
                 ))}
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
                   const dayEvents = events.filter(e => e.year === currentYear && e.month === currentMonth && e.day === day);
                   return (
-                    <div key={day} class="p-2 min-h-[140px] border-b border-r space-y-2 hover:bg-blue-50/20 transition">
+                    <div key={day} class="p-2 min-h-[160px] border-b border-r space-y-2 hover:bg-blue-50/20 transition">
                       <div class="font-bold text-gray-800">{day}日</div>
-                      {dayEvents.map(ev => (
-                        <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-2.5 rounded-xl text-[16px] text-white font-bold cursor-pointer hover:opacity-90 shadow-sm" style={{ backgroundColor: ev.color }}>
-                          <div class="text-[13px] opacity-90">{ev.time}</div>
-                          <div>{ev.title}</div>
-                        </div>
-                      ))}
+                      {dayEvents.map(ev => {
+                        const presenterName = parsePresenter(ev.note);
+                        return (
+                          <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-2.5 rounded-xl text-white font-bold cursor-pointer hover:opacity-90 shadow-sm space-y-1 text-[13px] leading-snug" style={{ backgroundColor: ev.color }}>
+                            <div class="text-[15px] border-b border-white/30 pb-0.5">{ev.title}</div>
+                            <div>時間：{ev.time}</div>
+                            {ev.instructor && <div>主持：{ev.instructor}</div>}
+                            {presenterName && <div>報告：{presenterName}</div>}
+                            {ev.participants && <div>與會：{ev.participants}</div>}
+                            {ev.recorder && <div>紀錄：{ev.recorder}</div>}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
               </div>
 
+              {/* 手機專用清單（完全無 Icon） */}
               <div class="md:hidden space-y-3">
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
@@ -786,11 +796,19 @@
                   return (
                     <div key={day} class="bg-gray-50 p-3 rounded-xl border space-y-2">
                       <div class="font-bold text-gray-800 text-[16px] border-b pb-1">{currentMonth}月{day}日</div>
-                      {dayEvents.map(ev => (
-                        <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-3 rounded-xl text-white font-bold text-[16px]" style={{ backgroundColor: ev.color }}>
-                          時間：{ev.time} ｜ 標題：{ev.title}
-                        </div>
-                      ))}
+                      {dayEvents.map(ev => {
+                        const presenterName = parsePresenter(ev.note);
+                        return (
+                          <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-3 rounded-xl text-white font-bold text-[15px] space-y-1" style={{ backgroundColor: ev.color }}>
+                            <div class="text-[17px] border-b border-white/30 pb-1">{ev.title}</div>
+                            <div>時間：{ev.time}</div>
+                            {ev.instructor && <div>主持：{ev.instructor}</div>}
+                            {presenterName && <div>報告：{presenterName}</div>}
+                            {ev.participants && <div>與會：{ev.participants}</div>}
+                            {ev.recorder && <div>紀錄：{ev.recorder}</div>}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -950,7 +968,7 @@
                   </div>
                 </div>
 
-                {/* 3. 各科住院醫師 (獨立一整列) */}
+                {/* 3. 各科住院醫師 */}
                 <div class="col-span-1 md:col-span-2 p-5 md:p-6 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-4 shadow-sm">
                   <div class="flex justify-between items-center border-b border-emerald-200 pb-2">
                     <h3 class="font-bold text-[22px] md:text-[26px] text-emerald-900">各科住院醫師</h3>
@@ -1031,7 +1049,7 @@
                   </div>
                 </div>
 
-                {/* 6. 輪訓實習醫師 (獨立一整列) */}
+                {/* 6. 輪訓實習醫師 */}
                 <div class="col-span-1 md:col-span-2 p-5 md:p-6 rounded-2xl bg-teal-50/80 border border-teal-200 space-y-4 shadow-sm">
                   <div class="flex justify-between items-center border-b border-teal-200 pb-2">
                     <h3 class="font-bold text-[22px] md:text-[26px] text-teal-900">輪訓實習醫師</h3>
@@ -1107,11 +1125,11 @@
                   <button onClick={() => setSelectedEvent(null)} class="text-gray-400 font-bold text-[24px]">✕</button>
                 </div>
                 <div class="space-y-3 text-[18px] md:text-[22px] text-gray-800">
-                  <div>與會者：<strong>{selectedEvent.participants || '全員'}</strong></div>
+                  <div>與會者：<strong>{selectedEvent.participants || '無'}</strong></div>
                   <div>時間：<strong class="text-emerald-800">{selectedEvent.time}</strong></div>
-                  <div>地點：<strong>{selectedEvent.location || '無指定'}</strong></div>
+                  <div>地點：<strong>{selectedEvent.location || '無'}</strong></div>
                   <div>主持醫師：<strong>{selectedEvent.instructor || '無'}</strong></div>
-                  <div>報告醫師：<strong>{(selectedEvent.note && selectedEvent.note.startsWith('報告醫師：')) ? selectedEvent.note.replace('報告醫師：', '') : '無'}</strong></div>
+                  <div>報告醫師：<strong>{parsePresenter(selectedEvent.note) || '無'}</strong></div>
                   <div>紀錄：<strong>{selectedEvent.recorder || '無'}</strong></div>
                 </div>
                 <div class="flex justify-between items-center pt-3 border-t">
@@ -1127,7 +1145,7 @@
             </div>
           )}
 
-          {/* 📅 Modal：新增 / 編輯 / 批次排定事件（完全無 Icon，精確包含請求欄位與三色選擇） */}
+          {/* Modal：排定/編輯事件 */}
           {showEventModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-3 md:p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-6 md:p-8 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -1143,7 +1161,6 @@
                     </div>
                   )}
 
-                  {/* 色彩等級選擇：紅色、黃色、綠色 */}
                   <div>
                     <label class="block text-gray-700 font-bold mb-1">色彩等級</label>
                     <select 

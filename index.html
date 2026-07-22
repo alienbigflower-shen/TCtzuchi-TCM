@@ -57,7 +57,7 @@
       const [selectedEvent, setSelectedEvent] = useState(null);
 
       const [newEvent, setNewEvent] = useState({ title: '', day: 22, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', participants: '', note: '', level: '🔴 高度重要' });
-      const [newRoster, setNewRoster] = useState({ day: 22, dept: '內一', shift: '早診', doctor: '黃仲諄醫師', studentName: '', isRecurring: true, weeklyDay: 1 });
+      const [newRoster, setNewRoster] = useState({ editId: null, day: 22, dept: '內一', shift: '早診', doctor: '莊佳穎醫師', studentName: '', isRecurring: false, weeklyDay: 1 });
       const [newBulletin, setNewBulletin] = useState({ title: '', content: '', author: '黃仲諄醫師', level: '普通' });
       const [newPerson, setNewPerson] = useState({ category: 'chiefDepartment', name: '', note: '' });
 
@@ -76,6 +76,18 @@
           { id: 2, title: '請假與認領跟診上限', content: '每人每週認領跟診上限為 2 診次；請假須提前 3 日向部總醫師報備。' }
         ]
       });
+
+      // 🎨 依診別切換柔和顏色的 Helper Function
+      const getShiftStyle = (shiftName) => {
+        if (shiftName === '早診') {
+          return 'bg-amber-50/90 border-amber-200 text-amber-900 hover:border-amber-400';
+        } else if (shiftName === '午診') {
+          return 'bg-sky-50/90 border-sky-200 text-sky-900 hover:border-sky-400';
+        } else if (shiftName === '晚診') {
+          return 'bg-purple-50/90 border-purple-200 text-purple-900 hover:border-purple-400';
+        }
+        return 'bg-blue-50/90 border-blue-200 text-blue-900 hover:border-blue-400';
+      };
 
       // 🔐 初始化權限與載入資料庫內容
       useEffect(() => {
@@ -120,6 +132,114 @@
         setLoading(false);
       };
 
+      // ➕ 新增/編輯跟診排班（防重複覆蓋邏輯）
+      const handleSaveRoster = async (e) => {
+        e.preventDefault();
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
+
+        const studentsArr = newRoster.studentName ? newRoster.studentName.split(/[,、\s]+/).map(s => s.trim()).filter(Boolean) : [];
+
+        const existingShift = rosterShifts.find(s => 
+          !s.is_recurring &&
+          s.year === currentYear &&
+          s.month === currentMonth &&
+          s.day === parseInt(newRoster.day) &&
+          s.dept === selectedDept &&
+          s.shift === newRoster.shift &&
+          s.doctor === newRoster.doctor
+        );
+
+        if (newRoster.editId || existingShift) {
+          const targetId = newRoster.editId || existingShift.id;
+          const { data, error } = await supabase
+            .from('roster_shifts')
+            .update({ 
+              doctor: newRoster.doctor,
+              shift: newRoster.shift,
+              students: studentsArr 
+            })
+            .eq('id', targetId)
+            .select();
+
+          if (!error && data) {
+            setRosterShifts(rosterShifts.map(s => s.id === targetId ? data[0] : s));
+          }
+        } else {
+          const item = {
+            id: 's_' + Date.now(),
+            year: currentYear, month: currentMonth, day: parseInt(newRoster.day),
+            dept: selectedDept, shift: newRoster.shift, doctor: newRoster.doctor,
+            students: studentsArr, is_recurring: newRoster.isRecurring, weekly_day: parseInt(newRoster.weeklyDay)
+          };
+
+          const { data, error } = await supabase.from('roster_shifts').insert([item]).select();
+          if (!error && data) setRosterShifts([...rosterShifts, data[0]]);
+        }
+
+        setShowRosterModal(false);
+        setNewRoster({ editId: null, day: 22, dept: selectedDept, shift: '早診', doctor: '莊佳穎醫師', studentName: '', isRecurring: false, weeklyDay: 1 });
+      };
+
+      // 👆 點擊卡片觸發動作：總醫師為編輯，學員為報名
+      const handleCardClick = (e, shift, day) => {
+        e.stopPropagation();
+        if (isApproved) {
+          setNewRoster({
+            editId: shift.id,
+            day: day,
+            dept: selectedDept,
+            shift: shift.shift,
+            doctor: shift.doctor,
+            studentName: shift.students ? shift.students.join(', ') : '',
+            isRecurring: shift.is_recurring || false,
+            weeklyDay: shift.weekly_day || 1
+          });
+          setShowRosterModal(true);
+        } else {
+          toggleBookingStudent(shift);
+        }
+      };
+
+      // 🙋 學員自主認領/取消跟診
+      const toggleBookingStudent = async (shift) => {
+        if (!user) return alert('請先使用 Google 帳號登入！');
+        const name = user.user_metadata?.full_name || user.email.split('@')[0];
+        let updatedStudents = [...(shift.students || [])];
+
+        if (updatedStudents.includes(name)) {
+          if (!confirm(`確定要取消認領 ${shift.doctor} (${shift.shift}) 的跟診嗎？`)) return;
+          updatedStudents = updatedStudents.filter(n => n !== name);
+        } else {
+          if (updatedStudents.length >= 2) return alert('該診次跟診名額已滿（上限 2 人）！');
+          updatedStudents.push(name);
+        }
+
+        await supabase.from('roster_shifts').update({ students: updatedStudents }).eq('id', shift.id);
+        setRosterShifts(rosterShifts.map(s => s.id === shift.id ? { ...s, students: updatedStudents } : s));
+      };
+
+      // 🗑️ 刪除排班
+      const handleDeleteRoster = async (e, shift, day) => {
+        e.stopPropagation();
+        if (!isApproved) return alert('權限不足！');
+
+        if (shift.is_recurring) {
+          const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const opt = prompt(`[1] 僅刪除 ${dateStr} 單診\n[2] 刪除此常態班（包含未來所有診次）`, "1");
+          if (opt === '1') {
+            setRosterExceptions([...rosterExceptions, `${shift.id}_${dateStr}`]);
+          } else if (opt === '2') {
+            await supabase.from('roster_shifts').delete().eq('id', shift.id);
+            setRosterShifts(rosterShifts.filter(s => s.id !== shift.id));
+          }
+        } else {
+          if (confirm(`確定刪除【${shift.doctor} - ${shift.shift}】的診次嗎？`)) {
+            await supabase.from('roster_shifts').delete().eq('id', shift.id);
+            setRosterShifts(rosterShifts.filter(s => s.id !== shift.id));
+          }
+        }
+      };
+
       // ➕ 新增/刪除 行事曆事件
       const handleAddEvent = async (e) => {
         e.preventDefault();
@@ -143,45 +263,6 @@
           await supabase.from('events').delete().eq('id', id);
           setEvents(events.filter(e => e.id !== id));
           setSelectedEvent(null);
-        }
-      };
-
-      // ➕ 新增跟診排班
-      const handleAddRoster = async (e) => {
-        e.preventDefault();
-        if (!isApproved) return alert('權限不足！');
-        const studentsArr = newRoster.studentName ? newRoster.studentName.split(',').map(s => s.trim()) : [];
-        const item = {
-          id: 's_' + Date.now(),
-          year: currentYear, month: currentMonth, day: parseInt(newRoster.day),
-          dept: selectedDept, shift: newRoster.shift, doctor: newRoster.doctor,
-          students: studentsArr, is_recurring: newRoster.isRecurring, weekly_day: parseInt(newRoster.weeklyDay)
-        };
-
-        const { data, error } = await supabase.from('roster_shifts').insert([item]).select();
-        if (!error && data) setRosterShifts([...rosterShifts, data[0]]);
-        setShowRosterModal(false);
-      };
-
-      // 🗑️ 刪除跟診排班
-      const handleDeleteRoster = async (e, shift, day) => {
-        e.stopPropagation();
-        if (!isApproved) return alert('權限不足！');
-
-        if (shift.is_recurring) {
-          const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const opt = prompt(`[1] 僅刪除 ${dateStr} 單診\n[2] 刪除此常態班（包含未來所有診次）`, "1");
-          if (opt === '1') {
-            setRosterExceptions([...rosterExceptions, `${shift.id}_${dateStr}`]);
-          } else if (opt === '2') {
-            await supabase.from('roster_shifts').delete().eq('id', shift.id);
-            setRosterShifts(rosterShifts.filter(s => s.id !== shift.id));
-          }
-        } else {
-          if (confirm('確定刪除此門診診次？')) {
-            await supabase.from('roster_shifts').delete().eq('id', shift.id);
-            setRosterShifts(rosterShifts.filter(s => s.id !== shift.id));
-          }
         }
       };
 
@@ -221,24 +302,6 @@
         }
       };
 
-      // 🙋 學員認領跟診
-      const toggleBooking = async (e, shift) => {
-        e.stopPropagation();
-        if (!user) return alert('請先使用 Google 帳號登入！');
-        const name = user.user_metadata?.full_name || user.email.split('@')[0];
-        let updatedStudents = [...(shift.students || [])];
-
-        if (updatedStudents.includes(name)) {
-          updatedStudents = updatedStudents.filter(n => n !== name);
-        } else {
-          if (updatedStudents.length >= 2) return alert('診次認領名額已滿！');
-          updatedStudents.push(name);
-        }
-
-        await supabase.from('roster_shifts').update({ students: updatedStudents }).eq('id', shift.id);
-        setRosterShifts(rosterShifts.map(s => s.id === shift.id ? { ...s, students: updatedStudents } : s));
-      };
-
       const handlePrevMonth = () => { if (currentMonth === 1) { setCurrentMonth(12); setCurrentYear(currentYear - 1); } else { setCurrentMonth(currentMonth - 1); } };
       const handleNextMonth = () => { if (currentMonth === 12) { setCurrentMonth(1); setCurrentYear(currentYear + 1); } else { setCurrentMonth(currentMonth + 1); } };
       const handleFocusDateChange = (offset) => {
@@ -269,9 +332,9 @@
                     <div class="text-[20px] font-bold text-gray-800 flex items-center gap-2">
                       {user.user_metadata?.full_name || user.email.split('@')[0]}
                       {isApproved ? (
-                        <span class="text-[14px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-bold">已開通管理權限</span>
+                        <span class="text-[14px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-bold">已開通總醫師/管理者權限</span>
                       ) : (
-                        <span class="text-[14px] bg-gray-200 text-gray-700 px-2.5 py-0.5 rounded-full font-bold">一般訪客 (唯讀)</span>
+                        <span class="text-[14px] bg-gray-200 text-gray-700 px-2.5 py-0.5 rounded-full font-bold">一般學員 (認領跟診)</span>
                       )}
                     </div>
                   </div>
@@ -283,6 +346,7 @@
             </div>
           </header>
 
+          {/* 完整 6 大分頁導覽列 (與第一張圖完全一致) */}
           <nav class="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border shadow-sm no-print">
             {[
               { id: 'today', name: '當日焦點', icon: '📍' },
@@ -391,10 +455,6 @@
                         <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-3 rounded-2xl text-[18px] text-white space-y-1.5 shadow-sm cursor-pointer hover:opacity-90 transition" style={{ backgroundColor: ev.color }}>
                           <div class="text-[16px] font-medium opacity-95 flex items-center gap-1">🕒 <span>{ev.time}</span></div>
                           <div class="font-bold text-[19px] leading-snug">{ev.title}</div>
-                          <div class="pt-1 border-t border-white/20 space-y-0.5 text-[15px] opacity-90">
-                            {ev.instructor && <div>👨‍⚕️ {ev.instructor}</div>}
-                            {ev.participants && <div>👥 {ev.participants}</div>}
-                          </div>
                         </div>
                       ))}
                     </div>
@@ -404,7 +464,7 @@
             </div>
           )}
 
-          {/* 3. 跟診表 */}
+          {/* 3. 跟診表 (依早/午診套用柔黃/柔藍顏色，無多餘標註文字) */}
           {currentTab === 'roster' && (
             <div class="space-y-6">
               <div class="bg-white p-6 rounded-2xl border shadow-sm space-y-4">
@@ -416,8 +476,14 @@
                   </div>
 
                   {isApproved && (
-                    <button onClick={() => setShowRosterModal(true)} class="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-[20px] font-bold no-print hover:bg-gray-800">
-                      ⚙️ 設定醫師跟診診次 / 常態固定班
+                    <button 
+                      onClick={() => {
+                        setNewRoster({ editId: null, day: 1, dept: selectedDept, shift: '早診', doctor: '莊佳穎醫師', studentName: '', isRecurring: false, weeklyDay: 1 });
+                        setShowRosterModal(true);
+                      }} 
+                      class="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-[20px] font-bold no-print hover:bg-gray-800"
+                    >
+                      ⚙️ 排診 / 新增醫師跟診診次
                     </button>
                   )}
                 </div>
@@ -445,24 +511,44 @@
 
                   const singleShifts = rosterShifts.filter(s => !s.is_recurring && s.year === currentYear && s.month === currentMonth && s.day === day && s.dept === selectedDept);
                   const recurringShifts = rosterShifts.filter(s => s.is_recurring && s.dept === selectedDept && s.weekly_day === dayOfWeek && !rosterExceptions.includes(`${s.id}_${dateStr}`));
-                  const allDayShifts = [...singleShifts, ...recurringShifts];
+                  
+                  const allDayShifts = [...singleShifts, ...recurringShifts].sort((a, b) => {
+                    const order = { '早診': 1, '午診': 2, '晚診': 3 };
+                    return (order[a.shift] || 4) - (order[b.shift] || 4);
+                  });
 
                   return (
-                    <div key={day} onClick={() => { if(isApproved) { setNewRoster({...newRoster, day}); setShowRosterModal(true); } }} class={`p-2 min-h-[150px] border-b border-r space-y-2 transition ${isApproved ? 'hover:bg-blue-50/30 cursor-pointer' : ''}`}>
+                    <div 
+                      key={day} 
+                      onClick={() => {
+                        if (isApproved) {
+                          setNewRoster({ editId: null, day: day, dept: selectedDept, shift: '早診', doctor: '莊佳穎醫師', studentName: '', isRecurring: false, weeklyDay: dayOfWeek });
+                          setShowRosterModal(true);
+                        }
+                      }} 
+                      class={`p-2 min-h-[150px] border-b border-r space-y-2 transition ${isApproved ? 'hover:bg-blue-50/30 cursor-pointer' : ''}`}
+                    >
                       <div class="flex justify-between items-center">
                         <span class="font-bold text-gray-800">{day}日</span>
-                        {isApproved && <span class="text-[16px] text-blue-500 font-bold opacity-0 hover:opacity-100 no-print">+排診</span>}
+                        {isApproved && <span class="text-[16px] text-blue-500 font-bold opacity-0 hover:opacity-100 no-print">+點擊排診</span>}
                       </div>
                       
                       {allDayShifts.map(shift => (
-                        <div key={shift.id} onClick={(e) => toggleBooking(e, shift)} class="bg-blue-50/90 border border-blue-200 p-2.5 rounded-xl text-[18px] hover:border-blue-500 transition space-y-1 shadow-sm relative group">
+                        <div 
+                          key={shift.id} 
+                          onClick={(e) => handleCardClick(e, shift, day)} 
+                          class={`border p-2.5 rounded-xl text-[18px] transition space-y-1 shadow-sm relative group cursor-pointer ${getShiftStyle(shift.shift)}`}
+                        >
                           <div class="flex justify-between items-center">
-                            <div class="font-bold text-blue-900">{shift.doctor} ({shift.shift})</div>
+                            <div class="font-bold">{shift.doctor} ({shift.shift})</div>
                             {isApproved && (
-                              <button onClick={(e) => handleDeleteRoster(e, shift, day)} class="text-red-500 hover:text-red-700 font-bold text-[16px] p-1 rounded hover:bg-red-50 no-print">🗑️</button>
+                              <button onClick={(e) => handleDeleteRoster(e, shift, day)} class="text-red-500 hover:text-red-700 font-bold text-[16px] p-1 rounded hover:bg-red-50/50 no-print" title="刪除此診次">🗑️</button>
                             )}
                           </div>
-                          <div class="text-gray-700 font-medium">👨‍🎓 學生：{shift.students && shift.students.length > 0 ? shift.students.join('、') : <span class="text-gray-400">待認領</span>}</div>
+                          <div class="opacity-90 font-medium">
+                            👨‍🎓 學生：{shift.students && shift.students.length > 0 ? shift.students.join('、') : <span class="opacity-50">待認領</span>}
+                          </div>
+                          {isApproved && <div class="text-[12px] font-bold opacity-0 group-hover:opacity-100 text-right">✏️ 點擊編輯</div>}
                         </div>
                       ))}
                     </div>
@@ -472,7 +558,7 @@
             </div>
           )}
 
-          {/* 4. 中醫部醫師 */}
+          {/* 4. 中醫部醫師 (完全復原) */}
           {currentTab === 'personnel' && (
             <div class="bg-white p-8 rounded-2xl border shadow-sm space-y-8">
               <div class="flex justify-between items-center border-b pb-4">
@@ -510,15 +596,56 @@
             </div>
           )}
 
-          {/* 5. 重要規範 */}
+          {/* 5. 重要規範 (完全復原) */}
           {currentTab === 'rules' && (
             <div class="bg-white p-8 rounded-2xl border shadow-sm space-y-8">
-              <h2 class="text-[28px] font-bold text-gray-900 border-b pb-4">📖 本院醫師重要規範</h2>
+              <div class="flex justify-between items-center border-b pb-4">
+                <div>
+                  <h2 class="text-[28px] font-bold text-gray-900">📖 本院醫師重要規範</h2>
+                  <p class="text-[20px] text-gray-500 mt-1">包含本院醫師守則、住院醫師守則與實習醫師守則</p>
+                </div>
+                {isApproved && (
+                  <button onClick={() => setShowRuleModal(true)} class="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-[20px] font-bold hover:bg-blue-700 no-print">
+                    ✍️ 編輯/發布新守則條款
+                  </button>
+                )}
+              </div>
+
               <div class="space-y-8">
                 <div class="space-y-4">
-                  <h3 class="text-[26px] font-bold text-blue-900 bg-blue-50 p-4 rounded-xl border border-blue-200">🏛️ 一、本院醫師守則</h3>
+                  <h3 class="text-[26px] font-bold text-blue-900 flex items-center gap-3 bg-blue-50 p-4 rounded-xl border border-blue-200">
+                    <span>🏛️ 一、本院醫師守則</span>
+                  </h3>
                   <div class="grid md:grid-cols-2 gap-4">
                     {rules.hospital.map((r, i) => (
+                      <div key={r.id} class="p-6 rounded-2xl border bg-gray-50 space-y-2">
+                        <div class="font-bold text-[22px] text-gray-900">{i + 1}. {r.title}</div>
+                        <p class="text-[20px] text-gray-700 leading-relaxed">{r.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div class="space-y-4">
+                  <h3 class="text-[26px] font-bold text-indigo-900 flex items-center gap-3 bg-indigo-50 p-4 rounded-xl border border-indigo-200">
+                    <span>🩺 二、住院醫師守則</span>
+                  </h3>
+                  <div class="grid md:grid-cols-2 gap-4">
+                    {rules.resident.map((r, i) => (
+                      <div key={r.id} class="p-6 rounded-2xl border bg-gray-50 space-y-2">
+                        <div class="font-bold text-[22px] text-gray-900">{i + 1}. {r.title}</div>
+                        <p class="text-[20px] text-gray-700 leading-relaxed">{r.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div class="space-y-4">
+                  <h3 class="text-[26px] font-bold text-emerald-900 flex items-center gap-3 bg-emerald-50 p-4 rounded-xl border border-emerald-200">
+                    <span>👨‍🎓 三、實習醫師守則</span>
+                  </h3>
+                  <div class="grid md:grid-cols-2 gap-4">
+                    {rules.intern.map((r, i) => (
                       <div key={r.id} class="p-6 rounded-2xl border bg-gray-50 space-y-2">
                         <div class="font-bold text-[22px] text-gray-900">{i + 1}. {r.title}</div>
                         <p class="text-[20px] text-gray-700 leading-relaxed">{r.content}</p>
@@ -530,7 +657,7 @@
             </div>
           )}
 
-          {/* 6. 部上公佈欄 */}
+          {/* 6. 部上公佈欄 (完全復原) */}
           {currentTab === 'bulletin' && (
             <div class="bg-white p-6 rounded-2xl border shadow-sm space-y-6">
               <div class="flex justify-between items-center border-b pb-4">
@@ -602,30 +729,45 @@
             </div>
           )}
 
-          {/* 彈窗 2：新增排班 Modal */}
+          {/* 彈窗 2：設定跟診診次 Modal */}
           {showRosterModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-8 space-y-5 shadow-2xl">
-                <h3 class="font-bold text-[26px] text-gray-900 border-b pb-3">⚙️ 設定【{selectedDept}】跟診診次</h3>
-                <form onSubmit={handleAddRoster} class="space-y-4 text-[20px]">
-                  <div class="bg-gray-100 p-2 rounded-xl flex gap-2">
-                    <button type="button" onClick={() => setNewRoster({...newRoster, isRecurring: true})} class={`flex-1 py-2 rounded-lg font-bold text-[18px] ${newRoster.isRecurring ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>🔄 永久每週常態門診</button>
-                    <button type="button" onClick={() => setNewRoster({...newRoster, isRecurring: false})} class={`flex-1 py-2 rounded-lg font-bold text-[18px] ${!newRoster.isRecurring ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>指定單日門診</button>
+                <h3 class="font-bold text-[26px] text-gray-900 border-b pb-3">
+                  {newRoster.editId ? `✏️ 編輯【${selectedDept}】跟診資料` : `⚙️ 設定【${selectedDept}】跟診診次`}
+                </h3>
+                <form onSubmit={handleSaveRoster} class="space-y-4 text-[20px]">
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-gray-700 font-bold mb-1">日期 (幾號)</label>
+                      <input type="number" min="1" max={daysInMonth} value={newRoster.day} onChange={e => setNewRoster({...newRoster, day: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" />
+                    </div>
+                    <div>
+                      <label class="block text-gray-700 font-bold mb-1">診別</label>
+                      <select value={newRoster.shift} onChange={e => setNewRoster({...newRoster, shift: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold">
+                        <option value="早診">早診</option>
+                        <option value="午診">午診</option>
+                        <option value="晚診">晚診</option>
+                      </select>
+                    </div>
                   </div>
-                  {newRoster.isRecurring ? (
-                    <div class="grid grid-cols-2 gap-3 bg-blue-50/60 p-4 rounded-xl border border-blue-200">
-                      <div><label class="block text-blue-900 font-bold mb-1">每週幾？</label><select value={newRoster.weeklyDay} onChange={e => setNewRoster({...newRoster, weeklyDay: e.target.value})} class="w-full border rounded-xl p-3 bg-white font-bold"><option value="1">週一</option><option value="2">週二</option><option value="3">週三</option><option value="4">週四</option><option value="5">週五</option><option value="6">週六</option></select></div>
-                      <div><label class="block text-blue-900 font-bold mb-1">診別</label><select value={newRoster.shift} onChange={e => setNewRoster({...newRoster, shift: e.target.value})} class="w-full border rounded-xl p-3 bg-white font-bold"><option value="早診">早診</option><option value="午診">午診</option><option value="晚診">晚診</option></select></div>
-                    </div>
-                  ) : (
-                    <div class="grid grid-cols-2 gap-3">
-                      <div><label class="block text-gray-700 font-bold mb-1">日期 (幾號)</label><input type="number" min="1" max={daysInMonth} value={newRoster.day} onChange={e => setNewRoster({...newRoster, day: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" /></div>
-                      <div><label class="block text-gray-700 font-bold mb-1">診別</label><select value={newRoster.shift} onChange={e => setNewRoster({...newRoster, shift: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold"><option value="早診">早診</option><option value="午診">午診</option><option value="晚診">晚診</option></select></div>
-                    </div>
-                  )}
-                  <div><label class="block text-gray-700 font-bold mb-1">醫師姓名</label><input type="text" value={newRoster.doctor} onChange={e => setNewRoster({...newRoster, doctor: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" required /></div>
-                  <div><label class="block text-gray-700 font-bold mb-1">指定跟診學生</label><input type="text" value={newRoster.studentName} onChange={e => setNewRoster({...newRoster, studentName: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="以逗號分隔，如：小花,小明" /></div>
-                  <div class="flex justify-end gap-3 pt-3"><button type="button" onClick={() => setShowRosterModal(false)} class="px-6 py-3 border rounded-xl font-bold text-gray-600">取消</button><button type="submit" class="px-6 py-3 bg-gray-900 text-white font-bold rounded-xl">儲存門診設定</button></div>
+
+                  <div>
+                    <label class="block text-gray-700 font-bold mb-1">跟診主治醫師</label>
+                    <input type="text" value={newRoster.doctor} onChange={e => setNewRoster({...newRoster, doctor: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" placeholder="例如：莊佳穎醫師" required />
+                  </div>
+
+                  <div>
+                    <label class="block text-gray-700 font-bold mb-1">跟診學生 / 學員名單</label>
+                    <input type="text" value={newRoster.studentName} onChange={e => setNewRoster({...newRoster, studentName: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="例如：沈小花、張小明" />
+                  </div>
+
+                  <div class="flex justify-end gap-3 pt-3">
+                    <button type="button" onClick={() => setShowRosterModal(false)} class="px-6 py-3 border rounded-xl font-bold text-gray-600">取消</button>
+                    <button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">
+                      {newRoster.editId ? '更新跟診資料' : '儲存診次'}
+                    </button>
+                  </div>
                 </form>
               </div>
             </div>

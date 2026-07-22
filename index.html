@@ -47,49 +47,30 @@
       const [bulletins, setBulletins] = useState([]);
       const [personnelList, setPersonnelList] = useState([]);
       const [rosterExceptions, setRosterExceptions] = useState([]);
+      const [eventExceptions, setEventExceptions] = useState([]);
 
-      // 彈窗與表單狀態
+      // 彈窗狀態
       const [showEventModal, setShowEventModal] = useState(false);
       const [showRosterModal, setShowRosterModal] = useState(false);
       const [showBulletinModal, setShowBulletinModal] = useState(false);
       const [showPersonnelModal, setShowPersonnelModal] = useState(false);
-      const [showRuleModal, setShowRuleModal] = useState(false);
       const [selectedEvent, setSelectedEvent] = useState(null);
 
-      const [newEvent, setNewEvent] = useState({ title: '', day: 22, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', participants: '', note: '', level: '🔴 高度重要' });
+      // 表單狀態
+      const [newEvent, setNewEvent] = useState({ editId: null, title: '', day: 22, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', recorder: '', participants: '', note: '', level: '🔴 高度重要', isRecurring: false, weeklyDay: 1 });
       const [newRoster, setNewRoster] = useState({ editId: null, day: 22, dept: '內一', shift: '早診', doctor: '莊佳穎醫師', studentName: '', isRecurring: false, weeklyDay: 1 });
       const [newBulletin, setNewBulletin] = useState({ title: '', content: '', author: '黃仲諄醫師', level: '普通' });
       const [newPerson, setNewPerson] = useState({ category: 'chiefDepartment', name: '', note: '' });
 
-      // 預設靜態規範條款
-      const [rules] = useState({
-        hospital: [
-          { id: 1, title: '臨床診療與出勤規範', content: '門診與病房巡診請準時到位，並依規定穿著醫師白袍與配戴識別證。' },
-          { id: 2, title: '病歷書寫與評鑑標準', content: '所有門診與住院病歷須於 24 小時內完成簽核，嚴禁代簽與延遲。' }
-        ],
-        resident: [
-          { id: 1, title: '住院醫師值班與交班準則', content: '每日晨會前須完成病房交班，值班期間維持公用電話暢通。' },
-          { id: 2, title: '學術專題報告機制', content: '每月須完成至少一次 Journal Club 或臨床案例報告。' }
-        ],
-        intern: [
-          { id: 1, title: '實習醫師跟診與學習守則', content: '跟診前請先複習相關處方與病史，嚴禁在診間使用私人社交軟體。' },
-          { id: 2, title: '請假與認領跟診上限', content: '每人每週認領跟診上限為 2 診次；請假須提前 3 日向部總醫師報備。' }
-        ]
-      });
-
       // 🎨 依診別切換柔和顏色的 Helper Function
       const getShiftStyle = (shiftName) => {
-        if (shiftName === '早診') {
-          return 'bg-amber-50/90 border-amber-200 text-amber-900 hover:border-amber-400';
-        } else if (shiftName === '午診') {
-          return 'bg-sky-50/90 border-sky-200 text-sky-900 hover:border-sky-400';
-        } else if (shiftName === '晚診') {
-          return 'bg-purple-50/90 border-purple-200 text-purple-900 hover:border-purple-400';
-        }
+        if (shiftName === '早診') return 'bg-amber-50/90 border-amber-200 text-amber-900 hover:border-amber-400';
+        if (shiftName === '午診') return 'bg-sky-50/90 border-sky-200 text-sky-900 hover:border-sky-400';
+        if (shiftName === '晚診') return 'bg-purple-50/90 border-purple-200 text-purple-900 hover:border-purple-400';
         return 'bg-blue-50/90 border-blue-200 text-blue-900 hover:border-blue-400';
       };
 
-      // 🔐 初始化權限與載入資料庫內容
+      // 🔐 初始化權限與載入 Supabase 資料
       useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
           const currentUser = session?.user ?? null;
@@ -114,7 +95,6 @@
         setIsApproved(!!data);
       };
 
-      // 🔄 從 Supabase 讀取資料
       const fetchAllData = async () => {
         setLoading(true);
         const { data: evData } = await supabase.from('events').select('*');
@@ -132,7 +112,79 @@
         setLoading(false);
       };
 
-      // ➕ 新增/編輯跟診排班（防重複覆蓋邏輯）
+      // 📅 綜合行事曆：新增與編輯事件（含紀錄者與批次新增/刪除）
+      const handleSaveEvent = async (e) => {
+        e.preventDefault();
+        if (!isApproved) return alert('權限不足！');
+        const colorMap = { '🔴 高度重要': '#EF4444', '🟡 中度重要': '#EAB308', '🟢 一般事件': '#10B981' };
+        
+        const item = {
+          year: currentYear, month: currentMonth, day: parseInt(newEvent.day),
+          title: newEvent.title, time: newEvent.time, location: newEvent.location,
+          instructor: newEvent.instructor, recorder: newEvent.recorder,
+          participants: newEvent.participants, note: newEvent.note,
+          level: newEvent.level, color: colorMap[newEvent.level] || '#3B82F6',
+          is_recurring: newEvent.isRecurring, weekly_day: parseInt(newEvent.weeklyDay)
+        };
+
+        if (newEvent.editId) {
+          const { data, error } = await supabase.from('events').update(item).eq('id', newEvent.editId).select();
+          if (!error && data) {
+            setEvents(events.map(ev => ev.id === newEvent.editId ? data[0] : ev));
+            setSelectedEvent(data[0]);
+          }
+        } else {
+          const { data, error } = await supabase.from('events').insert([item]).select();
+          if (!error && data) setEvents([...events, data[0]]);
+        }
+
+        setShowEventModal(false);
+        setNewEvent({ editId: null, title: '', day: 22, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', recorder: '', participants: '', note: '', level: '🔴 高度重要', isRecurring: false, weeklyDay: 1 });
+      };
+
+      const handleDeleteEvent = async (ev, day) => {
+        if (!isApproved) return alert('權限不足！');
+        
+        if (ev.is_recurring) {
+          const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const opt = prompt(`[1] 僅刪除 ${dateStr} 此單日事件\n[2] 批次刪除所有後續重複事件`, "1");
+          if (opt === '1') {
+            setEventExceptions([...eventExceptions, `${ev.id}_${dateStr}`]);
+            setSelectedEvent(null);
+          } else if (opt === '2') {
+            await supabase.from('events').delete().eq('id', ev.id);
+            setEvents(events.filter(e => e.id !== ev.id));
+            setSelectedEvent(null);
+          }
+        } else {
+          if (confirm('確定要刪除此行事曆事件嗎？')) {
+            await supabase.from('events').delete().eq('id', ev.id);
+            setEvents(events.filter(e => e.id !== ev.id));
+            setSelectedEvent(null);
+          }
+        }
+      };
+
+      const openEditEventModal = (ev) => {
+        setNewEvent({
+          editId: ev.id,
+          title: ev.title || '',
+          day: ev.day || 1,
+          time: ev.time || '',
+          location: ev.location || '',
+          instructor: ev.instructor || '',
+          recorder: ev.recorder || '',
+          participants: ev.participants || '',
+          note: ev.note || '',
+          level: ev.level || '🔴 高度重要',
+          isRecurring: ev.is_recurring || false,
+          weeklyDay: ev.weekly_day || 1
+        });
+        setSelectedEvent(null);
+        setShowEventModal(true);
+      };
+
+      // 🩺 跟診表：儲存與編輯（支援單日與每週常態門診批次）
       const handleSaveRoster = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
@@ -153,11 +205,7 @@
           const targetId = newRoster.editId || existingShift.id;
           const { data, error } = await supabase
             .from('roster_shifts')
-            .update({ 
-              doctor: newRoster.doctor,
-              shift: newRoster.shift,
-              students: studentsArr 
-            })
+            .update({ doctor: newRoster.doctor, shift: newRoster.shift, students: studentsArr })
             .eq('id', targetId)
             .select();
 
@@ -180,7 +228,6 @@
         setNewRoster({ editId: null, day: 22, dept: selectedDept, shift: '早診', doctor: '莊佳穎醫師', studentName: '', isRecurring: false, weeklyDay: 1 });
       };
 
-      // 👆 點擊卡片觸發動作：總醫師為編輯，學員為報名
       const handleCardClick = (e, shift, day) => {
         e.stopPropagation();
         if (isApproved) {
@@ -200,7 +247,6 @@
         }
       };
 
-      // 🙋 學員自主認領/取消跟診
       const toggleBookingStudent = async (shift) => {
         if (!user) return alert('請先使用 Google 帳號登入！');
         const name = user.user_metadata?.full_name || user.email.split('@')[0];
@@ -218,14 +264,13 @@
         setRosterShifts(rosterShifts.map(s => s.id === shift.id ? { ...s, students: updatedStudents } : s));
       };
 
-      // 🗑️ 刪除排班
       const handleDeleteRoster = async (e, shift, day) => {
         e.stopPropagation();
         if (!isApproved) return alert('權限不足！');
 
         if (shift.is_recurring) {
           const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-          const opt = prompt(`[1] 僅刪除 ${dateStr} 單診\n[2] 刪除此常態班（包含未來所有診次）`, "1");
+          const opt = prompt(`[1] 僅刪除 ${dateStr} 單診\n[2] 批次刪除此常態門診（包含所有後續診次）`, "1");
           if (opt === '1') {
             setRosterExceptions([...rosterExceptions, `${shift.id}_${dateStr}`]);
           } else if (opt === '2') {
@@ -240,33 +285,7 @@
         }
       };
 
-      // ➕ 新增/刪除 行事曆事件
-      const handleAddEvent = async (e) => {
-        e.preventDefault();
-        if (!isApproved) return alert('權限不足！');
-        const colorMap = { '🔴 高度重要': '#EF4444', '🟡 中度重要': '#EAB308', '🟢 一般事件': '#10B981' };
-        const item = {
-          year: currentYear, month: currentMonth, day: parseInt(newEvent.day),
-          title: newEvent.title, time: newEvent.time, location: newEvent.location,
-          instructor: newEvent.instructor, participants: newEvent.participants,
-          note: newEvent.note, level: newEvent.level, color: colorMap[newEvent.level] || '#3B82F6'
-        };
-
-        const { data, error } = await supabase.from('events').insert([item]).select();
-        if (!error && data) setEvents([...events, data[0]]);
-        setShowEventModal(false);
-      };
-
-      const handleDeleteEvent = async (id) => {
-        if (!isApproved) return alert('權限不足！');
-        if (confirm('確定刪除此事件？')) {
-          await supabase.from('events').delete().eq('id', id);
-          setEvents(events.filter(e => e.id !== id));
-          setSelectedEvent(null);
-        }
-      };
-
-      // ➕ 新增/刪除 部上公告
+      // 📢 公佈欄與人員
       const handleAddBulletin = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！');
@@ -284,7 +303,6 @@
         }
       };
 
-      // ➕ 新增/刪除 醫師名單
       const handleAddPersonnel = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！');
@@ -316,6 +334,7 @@
 
       return (
         <div class="max-w-7xl mx-auto space-y-6">
+          {/* 頁頭 Header */}
           <header class="bg-white p-6 rounded-2xl shadow-sm border flex flex-wrap justify-between items-center gap-4">
             <div class="flex items-center gap-4">
               <div class="p-4 bg-blue-50 text-blue-600 rounded-2xl font-bold text-[28px]">🏥</div>
@@ -346,7 +365,7 @@
             </div>
           </header>
 
-          {/* 完整 6 大分頁導覽列 (與第一張圖完全一致) */}
+          {/* 完整 6 大分頁導覽列 */}
           <nav class="flex flex-wrap gap-2 bg-white p-2 rounded-2xl border shadow-sm no-print">
             {[
               { id: 'today', name: '當日焦點', icon: '📍' },
@@ -369,10 +388,10 @@
             ))}
           </nav>
 
-          {/* 1. 當日焦點 */}
+          {/* 1. 當日焦點 (沉穩深翡翠綠色主題) */}
           {currentTab === 'today' && (
             <div class="space-y-6">
-              <div class="bg-gradient-to-r from-blue-700 to-indigo-800 p-8 rounded-2xl text-white shadow-md space-y-4">
+              <div class="bg-gradient-to-r from-emerald-800 to-teal-900 p-8 rounded-2xl text-white shadow-md space-y-4">
                 <div class="flex flex-wrap justify-between items-center gap-4">
                   <div>
                     <div class="text-[20px] opacity-80 font-bold uppercase tracking-wider">Today's Focus</div>
@@ -382,7 +401,7 @@
                   <div class="flex items-center gap-3 bg-white/10 p-2 rounded-2xl backdrop-blur-sm border border-white/20 text-[20px]">
                     <button onClick={() => handleFocusDateChange(-1)} class="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-xl font-bold">◀ 前一天</button>
                     <input type="date" value={focusDate} onChange={e => setFocusDate(e.target.value)} class="bg-white text-gray-900 px-3 py-1.5 rounded-xl font-bold cursor-pointer outline-none" />
-                    <button onClick={() => setFocusDate('2026-07-22')} class="px-3 py-1.5 bg-blue-500 hover:bg-blue-400 rounded-xl font-bold">今天</button>
+                    <button onClick={() => setFocusDate('2026-07-22')} class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold">今天</button>
                     <button onClick={() => handleFocusDateChange(1)} class="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-xl font-bold">後一天 ▶</button>
                   </div>
                 </div>
@@ -390,24 +409,30 @@
 
               <div class="bg-white p-8 rounded-2xl border shadow-sm space-y-6">
                 <h3 class="text-[26px] font-bold text-gray-900 border-b pb-4 flex items-center gap-3">
-                  <span class="w-4 h-4 rounded-full bg-blue-600"></span>
+                  <span class="w-4 h-4 rounded-full bg-emerald-700"></span>
                   {focusY}年{focusM}月{focusD}日 行程與會議事件
                 </h3>
 
                 <div class="space-y-5">
-                  {events.filter(e => e.year === focusY && e.month === focusM && e.day === focusD).map(ev => (
+                  {events.filter(e => {
+                    const dayOfWeek = new Date(focusY, focusM - 1, focusD).getDay();
+                    const dateStr = `${focusY}-${String(focusM).padStart(2, '0')}-${String(focusD).padStart(2, '0')}`;
+                    if (eventExceptions.includes(`${e.id}_${dateStr}`)) return false;
+                    return (!e.is_recurring && e.year === focusY && e.month === focusM && e.day === focusD) || (e.is_recurring && e.weekly_day === dayOfWeek);
+                  }).map(ev => (
                     <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-6 rounded-2xl border-l-8 bg-gray-50 space-y-3 cursor-pointer hover:bg-gray-100 transition" style={{ borderColor: ev.color }}>
                       <div class="flex justify-between items-center">
                         <div class="text-[26px] font-bold text-gray-900">{ev.title}</div>
                         <span class="text-[20px] px-4 py-1 rounded-full bg-white border font-bold text-gray-700">{ev.level}</span>
                       </div>
                       <div class="grid md:grid-cols-2 gap-3 text-[22px] text-gray-700">
-                        <div>🕒 時間：<span class="font-bold text-blue-800">{ev.time}</span></div>
+                        <div>🕒 時間：<span class="font-bold text-emerald-800">{ev.time}</span></div>
                         <div>📍 地點：<span class="font-bold">{ev.location || '未定'}</span></div>
-                        <div>👨‍⚕️ 主持/指導醫師：<span class="font-bold">{ev.instructor || '黃仲諄醫師'}</span></div>
-                        <div>👥 參與人員：<span class="font-bold">{ev.participants || '全員'}</span></div>
+                        <div>👨‍⚕️ 主持/指導：<span class="font-bold">{ev.instructor || '黃仲諄醫師'}</span></div>
+                        <div>📝 紀錄者：<span class="font-bold text-emerald-900">{ev.recorder || '無指定'}</span></div>
+                        <div class="md:col-span-2">👥 參與人員：<span class="font-bold">{ev.participants || '全員'}</span></div>
                       </div>
-                      {ev.note && <div class="text-[20px] text-gray-600 bg-white p-3 rounded-xl border mt-2">📝 記錄/備註：{ev.note}</div>}
+                      {ev.note && <div class="text-[20px] text-gray-600 bg-white p-3 rounded-xl border mt-2">備註：{ev.note}</div>}
                     </div>
                   ))}
 
@@ -419,7 +444,7 @@
             </div>
           )}
 
-          {/* 2. 綜合行事曆 */}
+          {/* 2. 綜合行事曆 (包含紀錄者欄位與編輯/刪除) */}
           {currentTab === 'calendar' && (
             <div class="bg-white p-6 rounded-2xl border shadow-sm space-y-6">
               <div class="flex flex-wrap justify-between items-center gap-4">
@@ -430,7 +455,15 @@
                 </div>
                 <div class="flex gap-3 no-print">
                   {isApproved && (
-                    <button onClick={() => setShowEventModal(true)} class="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-[20px] font-bold hover:bg-blue-700">+ 新增行事曆事件</button>
+                    <button 
+                      onClick={() => {
+                        setNewEvent({ editId: null, title: '', day: 1, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', recorder: '', participants: '', note: '', level: '🔴 高度重要', isRecurring: false, weeklyDay: 1 });
+                        setShowEventModal(true);
+                      }} 
+                      class="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-[20px] font-bold hover:bg-blue-700"
+                    >
+                      + 新增/批次排定事件
+                    </button>
                   )}
                   <button onClick={() => window.print()} class="border px-5 py-2.5 rounded-xl text-[20px] font-bold hover:bg-gray-50">🖨️ 列印/下載</button>
                 </div>
@@ -447,14 +480,21 @@
 
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
-                  const dayEvents = events.filter(e => e.year === currentYear && e.month === currentMonth && e.day === day);
+                  const dayOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
+                  const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                  const singleEvents = events.filter(e => !e.is_recurring && e.year === currentYear && e.month === currentMonth && e.day === day);
+                  const recurringEvents = events.filter(e => e.is_recurring && e.weekly_day === dayOfWeek && !eventExceptions.includes(`${e.id}_${dateStr}`));
+                  const allDayEvents = [...singleEvents, ...recurringEvents];
+
                   return (
                     <div key={day} class="p-2 min-h-[140px] border-b border-r space-y-2 hover:bg-blue-50/20 transition">
                       <div class="font-bold text-gray-800">{day}日</div>
-                      {dayEvents.map(ev => (
-                        <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-3 rounded-2xl text-[18px] text-white space-y-1.5 shadow-sm cursor-pointer hover:opacity-90 transition" style={{ backgroundColor: ev.color }}>
-                          <div class="text-[16px] font-medium opacity-95 flex items-center gap-1">🕒 <span>{ev.time}</span></div>
+                      {allDayEvents.map(ev => (
+                        <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-3 rounded-2xl text-[18px] text-white space-y-1 shadow-sm cursor-pointer hover:opacity-90 transition" style={{ backgroundColor: ev.color }}>
+                          <div class="text-[16px] font-medium opacity-95 flex items-center gap-1">🕒 {ev.time}</div>
                           <div class="font-bold text-[19px] leading-snug">{ev.title}</div>
+                          {ev.recorder && <div class="text-[14px] opacity-90">📝 紀錄：{ev.recorder}</div>}
                         </div>
                       ))}
                     </div>
@@ -464,7 +504,7 @@
             </div>
           )}
 
-          {/* 3. 跟診表 (依早/午診套用柔黃/柔藍顏色，無多餘標註文字) */}
+          {/* 3. 跟診表 (含批次新增/批次刪除) */}
           {currentTab === 'roster' && (
             <div class="space-y-6">
               <div class="bg-white p-6 rounded-2xl border shadow-sm space-y-4">
@@ -558,7 +598,7 @@
             </div>
           )}
 
-          {/* 4. 中醫部醫師 (完全復原) */}
+          {/* 4. 中醫部醫師 */}
           {currentTab === 'personnel' && (
             <div class="bg-white p-8 rounded-2xl border shadow-sm space-y-8">
               <div class="flex justify-between items-center border-b pb-4">
@@ -596,68 +636,63 @@
             </div>
           )}
 
-          {/* 5. 重要規範 (完全復原) */}
+          {/* 5. 重要規範 (依要求清空與完全精確貼入注意事項，完全不含 emoji) */}
           {currentTab === 'rules' && (
             <div class="bg-white p-8 rounded-2xl border shadow-sm space-y-8">
-              <div class="flex justify-between items-center border-b pb-4">
-                <div>
-                  <h2 class="text-[28px] font-bold text-gray-900">📖 本院醫師重要規範</h2>
-                  <p class="text-[20px] text-gray-500 mt-1">包含本院醫師守則、住院醫師守則與實習醫師守則</p>
-                </div>
-                {isApproved && (
-                  <button onClick={() => setShowRuleModal(true)} class="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-[20px] font-bold hover:bg-blue-700 no-print">
-                    ✍️ 編輯/發布新守則條款
-                  </button>
-                )}
+              <div class="border-b pb-4">
+                <h2 class="text-[28px] font-bold text-gray-900">本院醫師重要規範</h2>
+                <p class="text-[20px] text-gray-500 mt-1">包含本院醫師守則、住院醫師守則與實習醫師守則</p>
               </div>
 
               <div class="space-y-8">
+                {/* 一、本院醫師守則 (僅留下標題) */}
                 <div class="space-y-4">
-                  <h3 class="text-[26px] font-bold text-blue-900 flex items-center gap-3 bg-blue-50 p-4 rounded-xl border border-blue-200">
-                    <span>🏛️ 一、本院醫師守則</span>
+                  <h3 class="text-[26px] font-bold text-blue-900 bg-blue-50 p-4 rounded-xl border border-blue-200">
+                    一、本院醫師守則
                   </h3>
-                  <div class="grid md:grid-cols-2 gap-4">
-                    {rules.hospital.map((r, i) => (
-                      <div key={r.id} class="p-6 rounded-2xl border bg-gray-50 space-y-2">
-                        <div class="font-bold text-[22px] text-gray-900">{i + 1}. {r.title}</div>
-                        <p class="text-[20px] text-gray-700 leading-relaxed">{r.content}</p>
-                      </div>
-                    ))}
-                  </div>
                 </div>
 
+                {/* 二、住院醫師守則 (僅留下標題) */}
                 <div class="space-y-4">
-                  <h3 class="text-[26px] font-bold text-indigo-900 flex items-center gap-3 bg-indigo-50 p-4 rounded-xl border border-indigo-200">
-                    <span>🩺 二、住院醫師守則</span>
+                  <h3 class="text-[26px] font-bold text-indigo-900 bg-indigo-50 p-4 rounded-xl border border-indigo-200">
+                    二、住院醫師守則
                   </h3>
-                  <div class="grid md:grid-cols-2 gap-4">
-                    {rules.resident.map((r, i) => (
-                      <div key={r.id} class="p-6 rounded-2xl border bg-gray-50 space-y-2">
-                        <div class="font-bold text-[22px] text-gray-900">{i + 1}. {r.title}</div>
-                        <p class="text-[20px] text-gray-700 leading-relaxed">{r.content}</p>
-                      </div>
-                    ))}
-                  </div>
                 </div>
 
+                {/* 三、實習醫師守則 (新增完全正確之內文與注意事項，絕無任何 icon) */}
                 <div class="space-y-4">
-                  <h3 class="text-[26px] font-bold text-emerald-900 flex items-center gap-3 bg-emerald-50 p-4 rounded-xl border border-emerald-200">
-                    <span>👨‍🎓 三、實習醫師守則</span>
+                  <h3 class="text-[26px] font-bold text-emerald-900 bg-emerald-50 p-4 rounded-xl border border-emerald-200">
+                    三、實習醫師守則
                   </h3>
-                  <div class="grid md:grid-cols-2 gap-4">
-                    {rules.intern.map((r, i) => (
-                      <div key={r.id} class="p-6 rounded-2xl border bg-gray-50 space-y-2">
-                        <div class="font-bold text-[22px] text-gray-900">{i + 1}. {r.title}</div>
-                        <p class="text-[20px] text-gray-700 leading-relaxed">{r.content}</p>
-                      </div>
-                    ))}
+
+                  <div class="p-6 rounded-2xl border bg-gray-50 space-y-4 text-[20px] leading-relaxed text-gray-800">
+                    <div class="font-bold text-[22px] text-gray-900 border-b pb-2">❖ 注意事項：</div>
+                    
+                    <ol class="list-decimal list-inside space-y-3 pl-2">
+                      <li>住院醫師及實習醫師病例及期刊報告請於3日前寄出初稿給全體中醫部醫師。</li>
+                      <li>中醫部行政會議、聯合視訊會議：實習醫師不參加。</li>
+                      <li>大內科行政會議：內婦兒科住院醫師、內婦兒科主治醫師必須參加，輪訓內婦兒科住院醫師及實習醫師不強制參加。</li>
+                      <li>針傷科行政會議：針傷科主治醫師、住院醫師、護理人員必須參加，輪訓針傷科住院醫師及實習醫師不強制參加。</li>
+                      <li>新思維教育講座：請實習醫師、住院醫師(R1-R2)及內科資深住院醫師必須參加，請紀錄者紀錄並錄影後將影像檔存至中醫部隨身硬碟。</li>
+                      <li>須彌山講座：經專家同意後錄影，請紀錄者紀錄並錄影後將影像檔存至中醫部硬碟。請負責須彌山紀錄的醫師準備講者的茶水，並檢查麥克風正常運作與否。</li>
+                      <li>&lt;注意&gt;：輪訓藥局醫師仍需參與科內報告，離開藥局前請先報請中藥局主任。輪訓中藥局的實習醫師不必交病例報告，但是每周要交一篇A4兩面的心得報告。</li>
+                    </ol>
+
+                    <div class="pt-4 border-t space-y-1 font-medium bg-white p-4 rounded-xl border">
+                      <div>&lt;全&gt;中醫部全體主治、實習、住院醫師皆須參加；</div>
+                      <div>&lt;實住12&gt;實習醫師跟第一年、第二年住院醫師需參加。</div>
+                      <div>&lt;內&gt;輪訓內科跟當科資深、主治醫師者需參加；</div>
+                      <div>&lt;針&gt;輪訓針灸科跟當科資深、主治醫師者需參加；</div>
+                      <div>&lt;傷&gt;輪訓傷科跟資深、當科主治醫師者需參加；</div>
+                      <div>&lt;婦兒&gt;輪訓婦兒科跟資深、當科主治醫師者需參加；</div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 6. 部上公佈欄 (完全復原) */}
+          {/* 6. 部上公佈欄 */}
           {currentTab === 'bulletin' && (
             <div class="bg-white p-6 rounded-2xl border shadow-sm space-y-6">
               <div class="flex justify-between items-center border-b pb-4">
@@ -683,7 +718,7 @@
             </div>
           )}
 
-          {/* 🔍 事件 Modal */}
+          {/* 🔍 行事曆事件 Modal (支援記錄者欄位顯示與編輯按鈕) */}
           {selectedEvent && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print" onClick={() => setSelectedEvent(null)}>
               <div class="bg-white rounded-3xl max-w-xl w-full p-8 space-y-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -698,38 +733,81 @@
                   <div>🕒 時間：<strong class="text-blue-700">{selectedEvent.time}</strong></div>
                   <div>📍 地點：<strong>{selectedEvent.location || '無指定'}</strong></div>
                   <div>👨‍⚕️ 主持：<strong>{selectedEvent.instructor || '黃仲諄醫師'}</strong></div>
+                  <div class="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-emerald-900">
+                    📝 紀錄：<strong>{selectedEvent.recorder || '無指定紀錄者'}</strong>
+                  </div>
                   <div>👥 參與：<strong>{selectedEvent.participants || '全員'}</strong></div>
-                  {selectedEvent.note && <div class="bg-gray-50 p-4 rounded-2xl border text-[20px] whitespace-pre-line">📝 {selectedEvent.note}</div>}
+                  {selectedEvent.note && <div class="bg-gray-50 p-4 rounded-2xl border text-[20px] whitespace-pre-line">備註：{selectedEvent.note}</div>}
                 </div>
                 <div class="flex justify-between items-center pt-4 border-t">
-                  {isApproved ? <button onClick={() => handleDeleteEvent(selectedEvent.id)} class="px-5 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold text-[18px]">🗑️ 刪除此事件</button> : <div></div>}
+                  {isApproved ? (
+                    <div class="flex gap-2">
+                      <button onClick={() => openEditEventModal(selectedEvent)} class="px-5 py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl font-bold text-[18px]">✏️ 編輯此事件</button>
+                      <button onClick={() => handleDeleteEvent(selectedEvent, selectedEvent.day)} class="px-5 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold text-[18px]">🗑️ 刪除</button>
+                    </div>
+                  ) : <div></div>}
                   <button onClick={() => setSelectedEvent(null)} class="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-[20px]">關閉</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 彈窗 1：新增行事曆 Modal */}
+          {/* 彈窗 1：新增/編輯/批次行事曆 Modal */}
           {showEventModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-8 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-                <h3 class="font-bold text-[26px] text-gray-900 border-b pb-3">📅 新增行事曆事件 ({currentYear}年{currentMonth}月)</h3>
-                <form onSubmit={handleAddEvent} class="space-y-4 text-[20px]">
-                  <div><label class="block text-gray-700 font-bold mb-1">等級</label><select value={newEvent.level} onChange={e => setNewEvent({...newEvent, level: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold"><option value="🔴 高度重要">🔴 高度重要</option><option value="🟡 中度重要">🟡 中度重要</option><option value="🟢 一般事件">🟢 一般事件</option></select></div>
-                  <div><label class="block text-gray-700 font-bold mb-1">日期 (幾號)</label><input type="number" min="1" max={daysInMonth} value={newEvent.day} onChange={e => setNewEvent({...newEvent, day: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" /></div>
-                  <div><label class="block text-gray-700 font-bold mb-1">事件名稱</label><input type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" required /></div>
-                  <div><label class="block text-gray-700 font-bold mb-1">時間</label><input type="text" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" /></div>
-                  <div><label class="block text-gray-700 font-bold mb-1">地點</label><input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" /></div>
-                  <div><label class="block text-gray-700 font-bold mb-1">主持/指導醫師</label><input type="text" value={newEvent.instructor} onChange={e => setNewEvent({...newEvent, instructor: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" /></div>
-                  <div><label class="block text-gray-700 font-bold mb-1">參與人員</label><input type="text" value={newEvent.participants} onChange={e => setNewEvent({...newEvent, participants: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" /></div>
-                  <div><label class="block text-gray-700 font-bold mb-1">備註</label><textarea value={newEvent.note} onChange={e => setNewEvent({...newEvent, note: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 h-24"></textarea></div>
-                  <div class="flex justify-end gap-3 pt-3"><button type="button" onClick={() => setShowEventModal(false)} class="px-6 py-3 border rounded-xl font-bold text-gray-600">取消</button><button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl">儲存</button></div>
+                <h3 class="font-bold text-[26px] text-gray-900 border-b pb-3">
+                  {newEvent.editId ? '✏️ 編輯行事曆事件' : '📅 新增 / 批次排定行事曆事件'}
+                </h3>
+                <form onSubmit={handleSaveEvent} class="space-y-4 text-[20px]">
+                  <div class="bg-gray-100 p-2 rounded-xl flex gap-2">
+                    <button type="button" onClick={() => setNewEvent({...newEvent, isRecurring: false})} class={`flex-1 py-2 rounded-lg font-bold text-[18px] ${!newEvent.isRecurring ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>指定單日事件</button>
+                    <button type="button" onClick={() => setNewEvent({...newEvent, isRecurring: true})} class={`flex-1 py-2 rounded-lg font-bold text-[18px] ${newEvent.isRecurring ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>🔄 批次每週重複事件</button>
+                  </div>
+
+                  <div>
+                    <label class="block text-gray-700 font-bold mb-1">等級</label>
+                    <select value={newEvent.level} onChange={e => setNewEvent({...newEvent, level: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold">
+                      <option value="🔴 高度重要">🔴 高度重要</option>
+                      <option value="🟡 中度重要">🟡 中度重要</option>
+                      <option value="🟢 一般事件">🟢 一般事件</option>
+                    </select>
+                  </div>
+
+                  {newEvent.isRecurring ? (
+                    <div>
+                      <label class="block text-blue-900 font-bold mb-1">每週幾固定舉行？</label>
+                      <select value={newEvent.weeklyDay} onChange={e => setNewEvent({...newEvent, weeklyDay: e.target.value})} class="w-full border rounded-xl p-3 bg-blue-50 font-bold">
+                        <option value="1">週一</option><option value="2">週二</option><option value="3">週三</option><option value="4">週四</option><option value="5">週五</option><option value="6">週六</option><option value="0">週日</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label class="block text-gray-700 font-bold mb-1">日期 (幾號)</label>
+                      <input type="number" min="1" max={daysInMonth} value={newEvent.day} onChange={e => setNewEvent({...newEvent, day: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" />
+                    </div>
+                  )}
+
+                  <div><label class="block text-gray-700 font-bold mb-1">事件名稱</label><input type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" required placeholder="如：須彌山講座-雷射針灸" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">時間</label><input type="text" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：07:30~08:30" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">地點</label><input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：佛堂" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">主持 / 指導醫師</label><input type="text" value={newEvent.instructor} onChange={e => setNewEvent({...newEvent, instructor: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：Dr. Weber" /></div>
+                  
+                  {/* 📝 紀錄者欄位 */}
+                  <div class="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                    <label class="block text-emerald-900 font-bold mb-1">📝 紀錄者 (紀錄醫師)</label>
+                    <input type="text" value={newEvent.recorder} onChange={e => setNewEvent({...newEvent, recorder: e.target.value})} class="w-full border rounded-xl p-3 bg-white font-bold" placeholder="例如：蕭鈺廷醫師" />
+                  </div>
+
+                  <div><label class="block text-gray-700 font-bold mb-1">參與人員</label><input type="text" value={newEvent.participants} onChange={e => setNewEvent({...newEvent, participants: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：全院" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">備註說明</label><textarea value={newEvent.note} onChange={e => setNewEvent({...newEvent, note: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 h-24"></textarea></div>
+                  <div class="flex justify-end gap-3 pt-3"><button type="button" onClick={() => setShowEventModal(false)} class="px-6 py-3 border rounded-xl font-bold text-gray-600">取消</button><button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl">儲存事件</button></div>
                 </form>
               </div>
             </div>
           )}
 
-          {/* 彈窗 2：設定跟診診次 Modal */}
+          {/* 彈窗 2：設定/批次跟診診次 Modal */}
           {showRosterModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-8 space-y-5 shadow-2xl">
@@ -737,20 +815,32 @@
                   {newRoster.editId ? `✏️ 編輯【${selectedDept}】跟診資料` : `⚙️ 設定【${selectedDept}】跟診診次`}
                 </h3>
                 <form onSubmit={handleSaveRoster} class="space-y-4 text-[20px]">
-                  <div class="grid grid-cols-2 gap-3">
-                    <div>
-                      <label class="block text-gray-700 font-bold mb-1">日期 (幾號)</label>
-                      <input type="number" min="1" max={daysInMonth} value={newRoster.day} onChange={e => setNewRoster({...newRoster, day: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" />
-                    </div>
-                    <div>
-                      <label class="block text-gray-700 font-bold mb-1">診別</label>
-                      <select value={newRoster.shift} onChange={e => setNewRoster({...newRoster, shift: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold">
-                        <option value="早診">早診</option>
-                        <option value="午診">午診</option>
-                        <option value="晚診">晚診</option>
-                      </select>
-                    </div>
+                  <div class="bg-gray-100 p-2 rounded-xl flex gap-2">
+                    <button type="button" onClick={() => setNewRoster({...newRoster, isRecurring: false})} class={`flex-1 py-2 rounded-lg font-bold text-[18px] ${!newRoster.isRecurring ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>指定單日門診</button>
+                    <button type="button" onClick={() => setNewRoster({...newRoster, isRecurring: true})} class={`flex-1 py-2 rounded-lg font-bold text-[18px] ${newRoster.isRecurring ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>🔄 永久每週常態門診</button>
                   </div>
+
+                  {newRoster.isRecurring ? (
+                    <div class="grid grid-cols-2 gap-3 bg-blue-50/60 p-4 rounded-xl border border-blue-200">
+                      <div><label class="block text-blue-900 font-bold mb-1">每週幾？</label><select value={newRoster.weeklyDay} onChange={e => setNewRoster({...newRoster, weeklyDay: e.target.value})} class="w-full border rounded-xl p-3 bg-white font-bold"><option value="1">週一</option><option value="2">週二</option><option value="3">週三</option><option value="4">週四</option><option value="5">週五</option><option value="6">週六</option></select></div>
+                      <div><label class="block text-blue-900 font-bold mb-1">診別</label><select value={newRoster.shift} onChange={e => setNewRoster({...newRoster, shift: e.target.value})} class="w-full border rounded-xl p-3 bg-white font-bold"><option value="早診">早診</option><option value="午診">午診</option><option value="晚診">晚診</option></select></div>
+                    </div>
+                  ) : (
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-gray-700 font-bold mb-1">日期 (幾號)</label>
+                        <input type="number" min="1" max={daysInMonth} value={newRoster.day} onChange={e => setNewRoster({...newRoster, day: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" />
+                      </div>
+                      <div>
+                        <label class="block text-gray-700 font-bold mb-1">診別</label>
+                        <select value={newRoster.shift} onChange={e => setNewRoster({...newRoster, shift: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold">
+                          <option value="早診">早診</option>
+                          <option value="午診">午診</option>
+                          <option value="晚診">晚診</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label class="block text-gray-700 font-bold mb-1">跟診主治醫師</label>
@@ -765,7 +855,7 @@
                   <div class="flex justify-end gap-3 pt-3">
                     <button type="button" onClick={() => setShowRosterModal(false)} class="px-6 py-3 border rounded-xl font-bold text-gray-600">取消</button>
                     <button type="submit" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">
-                      {newRoster.editId ? '更新跟診資料' : '儲存診次'}
+                      {newRoster.editId ? '更新跟診資料' : '儲存門診設定'}
                     </button>
                   </div>
                 </form>

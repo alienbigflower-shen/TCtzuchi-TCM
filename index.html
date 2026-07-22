@@ -27,7 +27,7 @@
 
     // 🔗 連線至 Supabase (Project ID: htmectgbwqvvuvrajsln)
     const SUPABASE_URL = 'https://htmectgbwqvvuvrajsln.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bWVjdGdid3F2dnV2cmFqc2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MjMyOTksImV4cCI6MjEwMDE5OTI5OX0.5Kd47QjwR_E1Q9yEorLzb49blW-EfpzDmcobP2QjfMw'; // ⚠️ 請務必填入您 Supabase 的 anon public key
+    const SUPABASE_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0bWVjdGdid3F2dnV2cmFqc2xuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MjMyOTksImV4cCI6MjEwMDE5OTI5OX0.5Kd47QjwR_E1Q9yEorLzb49blW-EfpzDmcobP2QjfMw'; // ⚠️ 請務必填入您 Supabase 的 anon public key
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     function App() {
@@ -66,7 +66,7 @@
         }
       ]);
 
-      // 跟診診次
+      // 單日跟診診次
       const [rosterShifts, setRosterShifts] = useState([
         { id: 's1', year: 2026, month: 7, day: 22, dept: '內一', shift: '早診', doctor: '黃仲諄醫師', students: ['小花'] }
       ]);
@@ -75,6 +75,9 @@
       const [recurringRules, setRecurringRules] = useState([
         { id: 'r1', dept: '內一', weeklyDay: 1, shift: '午診', doctor: '黃仲諄醫師', defaultStudents: [] }
       ]);
+
+      // 常態門診的例外跳過日期 (例如某一週放假停診或單次取消) -> 格式: "ruleId_YYYY-MM-DD"
+      const [rosterExceptions, setRosterExceptions] = useState([]);
 
       // 部上公佈欄
       const [bulletins, setBulletins] = useState([
@@ -124,7 +127,6 @@
 
       // 🔒 身份與後台權限檢查機制
       useEffect(() => {
-        // 1. 初始化讀取當前 session
         supabase.auth.getSession().then(({ data: { session } }) => {
           const currentUser = session?.user ?? null;
           setUser(currentUser);
@@ -132,7 +134,6 @@
           else setCheckingAuth(false);
         });
 
-        // 2. 監聽 Auth 狀態改變（如 Google 登入轉向回來時）
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
           const currentUser = session?.user ?? null;
           setUser(currentUser);
@@ -227,6 +228,41 @@
         }
         setShowRosterModal(false);
         setNewRoster({ day: 22, dept: selectedDept, shift: '早診', doctor: '黃仲諄醫師', studentName: '', isRecurring: true, weeklyDay: 1 });
+      };
+
+      // 🗑️ 管理員刪除跟診診次 (支援單診刪除 & 批次刪除所有後續診次)
+      const handleDeleteRoster = (e, shift, day) => {
+        e.stopPropagation();
+        if (!isApproved) return alert('權限不足！');
+
+        if (shift.isRecurring) {
+          const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          
+          const option = prompt(
+            `刪除常態門診【${shift.doctor} - ${shift.shift}】\n\n` +
+            `請輸入數字選擇刪除方式：\n` +
+            `[1] 僅刪除 ${dateStr} 這一天單診\n` +
+            `[2] 批次刪除此常態門診（包含所有後續與未來診次）\n\n` +
+            `請輸入 1 或 2：`, 
+            "1"
+          );
+
+          if (option === '1') {
+            // 加入例外清單
+            const exceptionKey = `${shift.rawId}_${dateStr}`;
+            setRosterExceptions([...rosterExceptions, exceptionKey]);
+            alert(`已刪除 ${dateStr} 之診次！`);
+          } else if (option === '2') {
+            // 完全刪除該常態規則
+            setRecurringRules(recurringRules.filter(r => r.id !== shift.rawId));
+            alert(`已批次刪除【${shift.doctor}】的所有後續常態診次！`);
+          }
+        } else {
+          // 單日手動新增的診次
+          if (confirm(`確定要刪除【${shift.doctor} - ${shift.shift}】這個門診診次嗎？`)) {
+            setRosterShifts(rosterShifts.filter(s => s.id !== shift.id));
+          }
+        }
       };
 
       const handleCellClickRoster = (day) => {
@@ -455,7 +491,7 @@
             </div>
           )}
 
-          {/* 3. 跟診表 */}
+          {/* 3. 跟診表 (含單診 & 批次刪除功能) */}
           {currentTab === 'roster' && (
             <div class="space-y-6">
               <div class="bg-white p-6 rounded-2xl border shadow-sm space-y-4">
@@ -500,10 +536,15 @@
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
                   const dayOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
-                  const singleShifts = rosterShifts.filter(s => s.year === currentYear && s.month === currentMonth && s.day === day && s.dept === selectedDept);
+                  const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                  const singleShifts = rosterShifts.filter(s => s.year === currentYear && s.month === currentMonth && s.day === day && s.dept === selectedDept).map(s => ({ ...s, isRecurring: false }));
+                  
                   const recurringShifts = recurringRules
                     .filter(r => r.dept === selectedDept && r.weeklyDay === dayOfWeek)
-                    .map(r => ({ id: `rec_${currentYear}_${currentMonth}_${day}_${r.id}`, doctor: r.doctor, shift: r.shift, students: r.defaultStudents }));
+                    .filter(r => !rosterExceptions.includes(`${r.id}_${dateStr}`)) // 排除單診例外
+                    .map(r => ({ id: `rec_${currentYear}_${currentMonth}_${day}_${r.id}`, rawId: r.id, doctor: r.doctor, shift: r.shift, students: r.defaultStudents, isRecurring: true }));
+                  
                   const allDayShifts = [...singleShifts, ...recurringShifts];
 
                   return (
@@ -518,8 +559,20 @@
                       </div>
                       
                       {allDayShifts.map(shift => (
-                        <div key={shift.id} onClick={(e) => toggleBooking(e, shift.id)} class="bg-blue-50/90 border border-blue-200 p-2.5 rounded-xl text-[18px] hover:border-blue-500 transition space-y-1 shadow-sm">
-                          <div class="font-bold text-blue-900">{shift.doctor} ({shift.shift})</div>
+                        <div key={shift.id} onClick={(e) => toggleBooking(e, shift.id)} class="bg-blue-50/90 border border-blue-200 p-2.5 rounded-xl text-[18px] hover:border-blue-500 transition space-y-1 shadow-sm relative group">
+                          <div class="flex justify-between items-center">
+                            <div class="font-bold text-blue-900">{shift.doctor} ({shift.shift})</div>
+                            {/* 🗑️ 管理員刪除按鈕 */}
+                            {isApproved && (
+                              <button 
+                                onClick={(e) => handleDeleteRoster(e, shift, day)} 
+                                title="刪除門診診次"
+                                class="text-red-500 hover:text-red-700 font-bold text-[16px] p-1 rounded hover:bg-red-50 no-print"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
                           <div class="text-gray-700 font-medium">
                             👨‍🎓 學生：{shift.students.length > 0 ? shift.students.join('、') : <span class="text-gray-400">待認領</span>}
                           </div>

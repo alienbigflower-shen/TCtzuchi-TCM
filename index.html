@@ -87,12 +87,18 @@
         return () => subscription.unsubscribe();
       }, []);
 
-      const checkApproval = async (email) => {
-        if (!email) return setIsApproved(false);
-        const { data } = await supabase.from('approved_users').select('email').eq('email', email).maybeSingle();
-        setIsApproved(!!data);
-      };
+const checkApproval = async (email) => {
+  if (!email) return setIsApproved(false);
+  // 將登入的 email 強制轉為小寫再查詢
+  const cleanEmail = email.trim().toLowerCase();
+  const { data } = await supabase
+    .from('approved_users')
+    .select('email')
+    .ilike('email', cleanEmail) // ilike 為不分大小寫比對
+    .maybeSingle();
 
+  setIsApproved(!!data);
+};
       const fetchAllData = async () => {
         setLoading(true);
         const { data: evData } = await supabase.from('events').select('*');

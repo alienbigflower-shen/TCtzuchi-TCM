@@ -57,11 +57,15 @@
       const [rosterShifts, setRosterShifts] = useState([]);
       const [bulletins, setBulletins] = useState([]);
       const [personnelList, setPersonnelList] = useState([]);
+      
+      // 📚 核心課程狀態
+      const [courses, setCourses] = useState([]);
 
       const [showEventModal, setShowEventModal] = useState(false);
       const [showRosterModal, setShowRosterModal] = useState(false);
       const [showBulletinModal, setShowBulletinModal] = useState(false);
       const [showPersonnelModal, setShowPersonnelModal] = useState(false);
+      const [showCourseModal, setShowCourseModal] = useState(false);
       const [selectedEvent, setSelectedEvent] = useState(null);
 
       const [newEvent, setNewEvent] = useState({ 
@@ -91,6 +95,16 @@
         supervisorDoctor: '', 
         groupCode: 'A', 
         rotationDept: '內一' 
+      });
+
+      // 📚 新增/編輯課程表單狀態
+      const [newCourse, setNewCourse] = useState({
+        editId: null,
+        isScheduled: true, // true: 年度核心課程, false: 尚未排程課程
+        date: todayStr,
+        instructor: '',
+        content: '',
+        isConfirmed: false
       });
 
       const getShiftStyle = (shiftName) => {
@@ -174,6 +188,9 @@
 
         const { data: peData } = await supabase.from('personnel').select('*');
         if (peData) setPersonnelList(peData);
+
+        const { data: coData } = await supabase.from('core_courses').select('*');
+        if (coData) setCourses(coData);
 
         setLoading(false);
       };
@@ -609,6 +626,84 @@
         }
       };
 
+      // 📚 核心課程邏輯（新增 / 編輯 / 切換確認狀態 / 刪除）
+      const handleSaveCourse = async (e) => {
+        e.preventDefault();
+        if (!isApproved) return alert('權限不足！');
+
+        const payload = {
+          is_scheduled: newCourse.isScheduled,
+          course_date: newCourse.date,
+          instructor: newCourse.instructor,
+          content: newCourse.content,
+          is_confirmed: newCourse.isConfirmed
+        };
+
+        if (newCourse.editId) {
+          const { data, error } = await supabase
+            .from('core_courses')
+            .update(payload)
+            .eq('id', newCourse.editId)
+            .select();
+
+          if (!error && data) {
+            setCourses(courses.map(c => c.id === newCourse.editId ? data[0] : c));
+            alert('課程變更已儲存！');
+          } else if (error) {
+            alert('儲存失敗：' + error.message);
+          }
+        } else {
+          const { data, error } = await supabase
+            .from('core_courses')
+            .insert([payload])
+            .select();
+
+          if (!error && data) {
+            setCourses([...courses, data[0]]);
+            alert('已新增課程！');
+          } else if (error) {
+            alert('新增失敗：' + error.message);
+          }
+        }
+
+        setShowCourseModal(false);
+      };
+
+      const handleToggleCourseConfirmed = async (course) => {
+        if (!isApproved) return alert('權限不足！');
+        const nextState = !course.is_confirmed;
+        const { data, error } = await supabase
+          .from('core_courses')
+          .update({ is_confirmed: nextState })
+          .eq('id', course.id)
+          .select();
+
+        if (!error && data) {
+          setCourses(courses.map(c => c.id === course.id ? data[0] : c));
+        }
+      };
+
+      const openEditCourseModal = (c) => {
+        if (!isApproved) return;
+        setNewCourse({
+          editId: c.id,
+          isScheduled: c.is_scheduled,
+          date: c.course_date || todayStr,
+          instructor: c.instructor || '',
+          content: c.content || '',
+          isConfirmed: c.is_confirmed || false
+        });
+        setShowCourseModal(true);
+      };
+
+      const handleDeleteCourse = async (id) => {
+        if (!isApproved) return alert('權限不足！');
+        if (confirm('確定刪除此課程？')) {
+          await supabase.from('core_courses').delete().eq('id', id);
+          setCourses(courses.filter(c => c.id !== id));
+        }
+      };
+
       const handlePrevMonth = () => { if (currentMonth === 1) { setCurrentMonth(12); setCurrentYear(currentYear - 1); } else { setCurrentMonth(currentMonth - 1); } };
       const handleNextMonth = () => { if (currentMonth === 12) { setCurrentMonth(1); setCurrentYear(currentYear + 1); } else { setCurrentMonth(currentMonth + 1); } };
 
@@ -674,6 +769,7 @@
               { id: 'calendar', name: '綜合行事曆', icon: '📅' },
               { id: 'roster', name: '跟診表', icon: '🩺' },
               { id: 'personnel', name: '中醫部醫師', icon: '👨‍⚕️' },
+              { id: 'courses', name: '核心課程一覽表', icon: '📚' },
               { id: 'rules', name: '重要規範', icon: '📖' },
               { id: 'bulletin', name: '部上公佈欄', icon: '📢' }
             ].map(tab => (
@@ -721,7 +817,8 @@
                     return (
                       <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-4 md:p-6 rounded-2xl border-l-8 bg-gray-50 space-y-2 cursor-pointer hover:bg-gray-100 transition" style={{ borderColor: ev.color }}>
                         <div class="text-[20px] md:text-[26px] font-bold text-gray-900">{ev.title}</div>
-                        <div class="grid md:grid-cols-2 gap-2 text-[16px] md:text-[22px] text-gray-700">
+                        {/* 📌 需求 2：手機版完美呈現完整會議資訊（完全不帶色彩後綴字眼） */}
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[15px] md:text-[20px] text-gray-700">
                           <div>與會者：<span class="font-bold">{ev.participants || '無'}</span></div>
                           <div>時間：<span class="font-bold text-emerald-800">{ev.time}</span></div>
                           <div>地點：<span class="font-bold">{ev.location || '無'}</span></div>
@@ -755,7 +852,7 @@
                 )}
               </div>
 
-              {/* 桌上型 7 欄月曆（卡片完全不帶 Icon，條列所有細項） */}
+              {/* 桌上型 7 欄月曆 */}
               <div class="hidden md:grid grid-cols-7 border-t border-l text-[20px]">
                 {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map((d, i) => (
                   <div key={d} class={`p-3 text-center font-bold border-b border-r bg-gray-50 ${i === 0 || i === 6 ? 'text-red-500' : 'text-gray-800'}`}>{d}</div>
@@ -787,7 +884,7 @@
                 })}
               </div>
 
-              {/* 手機專用清單（完全無 Icon） */}
+              {/* 手機專用清單 */}
               <div class="md:hidden space-y-3">
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
@@ -812,6 +909,16 @@
                     </div>
                   );
                 })}
+              </div>
+
+              {/* 說明對照框 */}
+              <div class="bg-gray-50 p-4 md:p-5 rounded-2xl border border-gray-300 text-[15px] md:text-[18px] text-gray-800 space-y-1 font-medium mt-4">
+                <div>&lt;全&gt;中醫部全體主治、實習、住院醫師皆須參加；</div>
+                <div>&lt;實住12&gt;實習醫師跟第一年、第二年住院醫師需參加。</div>
+                <div>&lt;內&gt;輪訓內科跟當科資深、主治醫師者需參加；</div>
+                <div>&lt;針&gt;輪訓針灸科跟當科資深、主治醫師者需參加；</div>
+                <div>&lt;傷&gt;輪訓傷科跟資深、當科主治醫師者需參加；</div>
+                <div>&lt;婦兒&gt;輪訓婦兒科跟資深、當科主治醫師者需參加；</div>
               </div>
             </div>
           )}
@@ -1084,21 +1191,151 @@
             </div>
           )}
 
-          {/* 5. 重要規範 */}
+          {/* 5. 📌 需求 1：核心課程一覽表（字體約 12px-15px） */}
+          {currentTab === 'courses' && (
+            <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-6 text-[13px] md:text-[15px]">
+              <div class="flex flex-wrap justify-between items-center border-b pb-3 gap-3">
+                <div>
+                  <h2 class="text-[18px] md:text-[22px] font-bold text-gray-900">📚 核心課程一覽表</h2>
+                  <p class="text-[12px] md:text-[14px] text-gray-500 mt-0.5">包含年度已排程與尚未排程備選課程清單</p>
+                </div>
+                {isApproved && (
+                  <div class="flex gap-2">
+                    <button 
+                      onClick={() => {
+                        setNewCourse({ editId: null, isScheduled: true, date: todayStr, instructor: '', content: '', isConfirmed: false });
+                        setShowCourseModal(true);
+                      }} 
+                      class="bg-blue-600 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-blue-700 text-[13px] md:text-[14px]"
+                    >
+                      + 新增年度課程
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setNewCourse({ editId: null, isScheduled: false, date: '未定', instructor: '', content: '', isConfirmed: false });
+                        setShowCourseModal(true);
+                      }} 
+                      class="bg-amber-600 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-amber-700 text-[13px] md:text-[14px]"
+                    >
+                      + 新增未排程課程
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 區塊 1：年度核心課程內容 */}
+              <div class="space-y-3">
+                <h3 class="text-[15px] md:text-[17px] font-bold text-blue-900 border-l-4 border-blue-600 pl-2">
+                  年度核心課程內容
+                </h3>
+                <div class="overflow-x-auto rounded-xl border">
+                  <table class="w-full text-left border-collapse">
+                    <thead>
+                      <tr class="bg-blue-50 text-blue-950 font-bold border-b text-[13px] md:text-[14px]">
+                        {isApproved && <th class="p-2.5 border-r w-12 text-center">確認</th>}
+                        <th class="p-2.5 border-r w-28 md:w-36">日期</th>
+                        <th class="p-2.5 border-r w-28 md:w-36">講師</th>
+                        <th class="p-2.5 border-r">課程內容</th>
+                        {isApproved && <th class="p-2.5 w-20 text-center">操作</th>}
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y text-[13px] md:text-[14px]">
+                      {courses
+                        .filter(c => c.is_scheduled)
+                        .sort((a, b) => (a.course_date || '').localeCompare(b.course_date || ''))
+                        .map(c => (
+                          <tr key={c.id} class={`hover:bg-gray-50 transition ${c.is_confirmed ? 'font-bold bg-blue-50/30' : ''}`}>
+                            {isApproved && (
+                              <td class="p-2.5 border-r text-center">
+                                <input 
+                                  type="checkbox" 
+                                  checked={c.is_confirmed || false} 
+                                  onChange={() => handleToggleCourseConfirmed(c)}
+                                  class="w-4 h-4 accent-blue-600 cursor-pointer"
+                                  title="勾選即標示為粗體"
+                                />
+                              </td>
+                            )}
+                            <td class="p-2.5 border-r text-gray-800">{c.course_date || '未定'}</td>
+                            <td class="p-2.5 border-r text-gray-900">{c.instructor || '無'}</td>
+                            <td class="p-2.5 border-r text-gray-800 whitespace-pre-line">{c.content}</td>
+                            {isApproved && (
+                              <td class="p-2.5 text-center space-x-1 whitespace-nowrap">
+                                <button onClick={() => openEditCourseModal(c)} class="text-blue-600 hover:underline">編輯</button>
+                                <button onClick={() => handleDeleteCourse(c.id)} class="text-red-500 hover:underline">刪除</button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      {courses.filter(c => c.is_scheduled).length === 0 && (
+                        <tr><td colSpan="5" class="p-6 text-center text-gray-400">尚無年度核心課程內容</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 區塊 2：尚未排程課程 */}
+              <div class="space-y-3 pt-4 border-t">
+                <h3 class="text-[15px] md:text-[17px] font-bold text-amber-900 border-l-4 border-amber-600 pl-2">
+                  尚未排程課程
+                </h3>
+                <div class="overflow-x-auto rounded-xl border">
+                  <table class="w-full text-left border-collapse">
+                    <thead>
+                      <tr class="bg-amber-50 text-amber-950 font-bold border-b text-[13px] md:text-[14px]">
+                        <th class="p-2.5 border-r w-28 md:w-36">預計/備註日期</th>
+                        <th class="p-2.5 border-r w-28 md:w-36">講師</th>
+                        <th class="p-2.5 border-r">課程內容</th>
+                        {isApproved && <th class="p-2.5 w-20 text-center">操作</th>}
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y text-[13px] md:text-[14px]">
+                      {courses
+                        .filter(c => !c.is_scheduled)
+                        .map(c => (
+                          <tr key={c.id} class="hover:bg-gray-50 transition">
+                            <td class="p-2.5 border-r text-gray-700">{c.course_date || '未定'}</td>
+                            <td class="p-2.5 border-r font-medium text-gray-900">{c.instructor || '無'}</td>
+                            <td class="p-2.5 border-r text-gray-800 whitespace-pre-line">{c.content}</td>
+                            {isApproved && (
+                              <td class="p-2.5 text-center space-x-1 whitespace-nowrap">
+                                <button onClick={() => openEditCourseModal(c)} class="text-blue-600 hover:underline">編輯</button>
+                                <button onClick={() => handleDeleteCourse(c.id)} class="text-red-500 hover:underline">刪除</button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      {courses.filter(c => !c.is_scheduled).length === 0 && (
+                        <tr><td colSpan="4" class="p-6 text-center text-gray-400">尚無待排程課程</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 6. 重要規範 */}
           {currentTab === 'rules' && (
             <div class="bg-white p-5 md:p-8 rounded-2xl border shadow-sm space-y-6">
               <h2 class="text-[22px] md:text-[28px] font-bold text-gray-900 border-b pb-3">本院醫師重要規範</h2>
-              <div class="p-4 md:p-6 rounded-2xl border bg-gray-50 space-y-3 text-[16px] md:text-[20px] leading-relaxed">
-                <div class="font-bold text-[18px] md:text-[22px]">實習與住院醫師注意事項：</div>
-                <ol class="list-decimal list-inside space-y-2">
-                  <li>報告請於3日前寄出初稿給全體中醫部醫師。</li>
-                  <li>新思維講座、須彌山講座請指定紀錄者錄影與摘要記錄。</li>
+              <div class="p-5 md:p-7 rounded-2xl border bg-gray-50 space-y-4 text-[16px] md:text-[20px] leading-relaxed text-gray-800">
+                <div class="font-bold text-[18px] md:text-[22px] text-gray-900 border-b pb-2">❖ 會議注意事項：</div>
+                <ol class="list-decimal list-inside space-y-3 pl-1">
+                  <li>住院醫師及實習醫師病例及期刊報告請於3日前寄出初稿給全體中醫部醫師。</li>
+                  <li>中醫部行政會議、聯合視訊會議：實習醫師不參加。</li>
+                  <li>大內科行政會議：內婦兒科住院醫師、內婦兒科主治醫師必須參加，輪訓內婦兒科住院醫師及實習醫師不強制參加。</li>
+                  <li>針傷科行政會議：針傷科主治醫師、住院醫師、護理人員必須參加，輪訓針傷科住院醫師及實習醫師不強制參加。</li>
+                  <li>新思維教育講座：請實習醫師、住院醫師(R1-R2)及內科資深住院醫師必須參加，請紀錄者紀錄並錄影後將影像檔存至中醫部隨身硬碟。</li>
+                  <li>須彌山講座：經專家同意後錄影，請紀錄者紀錄並錄影後將影像檔存至中醫部硬碟。請負責須彌山紀錄的醫師準備講者的茶水，並檢查麥克風正常運作與否。</li>
+                  <li>輪訓藥局醫師仍需參與科內(內二)報告，離開藥局前請先報請中藥局主任。輪訓中藥局的實習醫師不必交病例報告，但是每周要交一篇A4兩面的心得報告。</li>
                 </ol>
               </div>
             </div>
           )}
 
-          {/* 6. 部上公佈欄 */}
+          {/* 7. 部上公佈欄 */}
           {currentTab === 'bulletin' && (
             <div class="bg-white p-5 md:p-6 rounded-2xl border shadow-sm space-y-4">
               <div class="flex justify-between items-center border-b pb-3">
@@ -1442,6 +1679,84 @@
                   <div class="flex justify-end gap-3 pt-3">
                     <button type="button" onClick={() => setShowPersonnelModal(false)} class="px-5 py-2.5 border rounded-xl font-bold">取消</button>
                     <button type="submit" class="px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl">儲存變更</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal：新增 / 編輯 核心課程彈窗 */}
+          {showCourseModal && isApproved && (
+            <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
+              <div class="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+                <h3 class="font-bold text-[20px] text-gray-900 border-b pb-3">
+                  {newCourse.editId ? '✏️ 編輯核心課程' : '📚 新增核心課程'}
+                </h3>
+                <form onSubmit={handleSaveCourse} class="space-y-3 text-[15px]">
+                  <div>
+                    <label class="block text-gray-700 font-bold mb-1">課程歸類</label>
+                    <select 
+                      value={newCourse.isScheduled ? 'true' : 'false'} 
+                      onChange={e => setNewCourse({...newCourse, isScheduled: e.target.value === 'true'})}
+                      class="w-full border rounded-xl p-2.5 bg-gray-50 font-bold"
+                    >
+                      <option value="true">年度核心課程內容</option>
+                      <option value="false">尚未排程課程</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block text-gray-700 font-bold mb-1">日期（或備註時間）</label>
+                    <input 
+                      type="text" 
+                      value={newCourse.date} 
+                      onChange={e => setNewCourse({...newCourse, date: e.target.value})} 
+                      class="w-full border rounded-xl p-2.5 bg-gray-50" 
+                      placeholder="例如：2026-08-12 或 未定" 
+                      required 
+                    />
+                  </div>
+
+                  <div>
+                    <label class="block text-gray-700 font-bold mb-1">講師</label>
+                    <input 
+                      type="text" 
+                      value={newCourse.instructor} 
+                      onChange={e => setNewCourse({...newCourse, instructor: e.target.value})} 
+                      class="w-full border rounded-xl p-2.5 bg-gray-50" 
+                      placeholder="例如：黃仲諄主任" 
+                    />
+                  </div>
+
+                  <div>
+                    <label class="block text-gray-700 font-bold mb-1">課程內容</label>
+                    <textarea 
+                      value={newCourse.content} 
+                      onChange={e => setNewCourse({...newCourse, content: e.target.value})} 
+                      class="w-full border rounded-xl p-2.5 bg-gray-50 h-24" 
+                      placeholder="請輸入詳細課程主題與說明" 
+                      required 
+                    ></textarea>
+                  </div>
+
+                  {newCourse.isScheduled && (
+                    <div class="flex items-center gap-2 bg-blue-50 p-3 rounded-xl border border-blue-200">
+                      <input 
+                        type="checkbox" 
+                        id="modalConfirm"
+                        checked={newCourse.isConfirmed} 
+                        onChange={e => setNewCourse({...newCourse, isConfirmed: e.target.checked})}
+                        class="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <label htmlFor="modalConfirm" class="text-blue-900 font-bold cursor-pointer">
+                        已排程（勾選後於表格中呈現粗體字）
+                      </label>
+                    </div>
+                  )}
+
+                  <div class="flex justify-end gap-3 pt-2 border-t">
+                    <button type="button" onClick={() => setShowCourseModal(false)} class="px-4 py-2 border rounded-xl font-bold">取消</button>
+                    <button type="submit" class="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">儲存變更</button>
                   </div>
                 </form>
               </div>

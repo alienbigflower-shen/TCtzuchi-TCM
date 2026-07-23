@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>醫療部務與跟診排班系統 - 臺中慈濟醫院中醫部</title>
+  <title>臺中慈濟醫院中醫部 - 綜合行事曆</title>
   <!-- Tailwind CSS 樣式庫 -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React 與 Supabase SDK -->
@@ -12,10 +12,42 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
+    /* 🖨️ 專為全月列印優化的 CSS */
     @media print {
+      @page {
+        size: landscape; /* 橫向滿版 */
+        margin: 6mm;
+      }
       .no-print { display: none !important; }
-      body { background-color: white !important; padding: 0 !important; }
-      .shadow-sm, .border, .shadow { box-shadow: none !important; border-color: #ddd !important; }
+      body { 
+        background-color: white !important; 
+        padding: 0 !important; 
+        margin: 0 !important; 
+        font-size: 11px !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .print-table {
+        border-collapse: collapse !important;
+        width: 100% !important;
+      }
+      .print-cell {
+        border: 1px solid #d1d5db !important;
+        vertical-align: top !important;
+        padding: 4px !important;
+        height: auto !important; 
+        min-height: 110px !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      .print-event-card {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 4px !important;
+      }
+      .shadow-sm, .border, .shadow, .rounded-2xl, .rounded-xl { 
+        box-shadow: none !important; 
+      }
     }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -57,8 +89,6 @@
       const [rosterShifts, setRosterShifts] = useState([]);
       const [bulletins, setBulletins] = useState([]);
       const [personnelList, setPersonnelList] = useState([]);
-      
-      // 📚 核心課程狀態
       const [courses, setCourses] = useState([]);
 
       const [showEventModal, setShowEventModal] = useState(false);
@@ -83,7 +113,18 @@
         weeklyDay: 1 
       });
 
-      const [newRoster, setNewRoster] = useState({ editId: null, day: todayObj.getDate(), dept: '內一', shift: '早診', doctor: '伍崇弘醫師', studentName: '', isRecurring: false, selectedSlots: [] });
+      const [newRoster, setNewRoster] = useState({ 
+        editId: null, 
+        day: todayObj.getDate(), 
+        dept: '內一', 
+        shift: '早診', 
+        doctor: '伍崇弘醫師', 
+        studentName: '', 
+        isTeaching: false, 
+        isRecurring: false, 
+        selectedSlots: [] 
+      });
+
       const [newBulletin, setNewBulletin] = useState({ title: '', content: '', author: '黃仲諄醫師', level: '普通' });
       
       const [newPerson, setNewPerson] = useState({ 
@@ -97,28 +138,41 @@
         rotationDept: '內一' 
       });
 
-      // 📚 新增/編輯課程表單狀態
       const [newCourse, setNewCourse] = useState({
         editId: null,
-        isScheduled: true, // true: 年度核心課程, false: 尚未排程課程
+        isScheduled: true,
         date: todayStr,
         instructor: '',
         content: '',
         isConfirmed: false
       });
 
-      const getShiftStyle = (shiftName) => {
-        if (shiftName === '早診') return 'bg-amber-50/90 border-amber-200 text-amber-900 hover:border-amber-400';
-        if (shiftName === '午診') return 'bg-sky-50/90 border-sky-200 text-sky-900 hover:border-sky-400';
-        if (shiftName === '晚診') return 'bg-purple-50/90 border-purple-200 text-purple-900 hover:border-purple-400';
+      const getShiftStyle = (shift, isTeaching) => {
+        if (isTeaching) {
+          return 'bg-pink-100/90 border-pink-300 text-pink-950 hover:border-pink-500 shadow-sm';
+        }
+        if (shift === '早診') return 'bg-amber-50/90 border-amber-200 text-amber-900 hover:border-amber-400';
+        if (shift === '午診') return 'bg-sky-50/90 border-sky-200 text-sky-900 hover:border-sky-400';
+        if (shift === '晚診') return 'bg-purple-50/90 border-purple-200 text-purple-900 hover:border-purple-400';
         return 'bg-blue-50/90 border-blue-200 text-blue-900 hover:border-blue-400';
       };
 
+      // 🎨 低彩度柔和馬卡龍色系設定
       const getColorHex = (colorName) => {
-        if (colorName === '紅色') return '#EF4444';
-        if (colorName === '黃色') return '#EAB308';
-        if (colorName === '綠色') return '#10B981';
-        return '#EF4444';
+        if (colorName === '紅色') return '#FEE2E2'; // 柔粉紅
+        if (colorName === '黃色') return '#FEF3C7'; // 柔鵝黃
+        if (colorName === '綠色') return '#D1FAE5'; // 柔薄荷綠
+        return '#FEE2E2';
+      };
+
+      // 🎨 動態計算事件卡片樣式（自動將鮮豔舊色轉為柔和色，文字設為黑色）
+      const getEventCardStyle = (ev) => {
+        let bg = ev.color;
+        if (ev.color === '#EF4444' || ev.level === '紅色') bg = '#FEE2E2';
+        else if (ev.color === '#EAB308' || ev.level === '黃色') bg = '#FEF3C7';
+        else if (ev.color === '#10B981' || ev.level === '綠色') bg = '#D1FAE5';
+        else if (!bg) bg = '#FEE2E2';
+        return { backgroundColor: bg, color: '#111827' };
       };
 
       const parsePresenter = (note) => {
@@ -325,8 +379,8 @@
       const openEditEventModal = (ev) => {
         const presenterVal = parsePresenter(ev.note);
         let colorName = '紅色';
-        if (ev.color === '#EAB308') colorName = '黃色';
-        if (ev.color === '#10B981') colorName = '綠色';
+        if (ev.color === '#EAB308' || ev.color === '#FEF3C7' || ev.level === '黃色') colorName = '黃色';
+        if (ev.color === '#10B981' || ev.color === '#D1FAE5' || ev.level === '綠色') colorName = '綠色';
 
         setNewEvent({
           editId: ev.id,
@@ -370,6 +424,7 @@
               doctor: newRoster.doctor, 
               shift: newRoster.shift, 
               students: studentsArr,
+              is_teaching: newRoster.isTeaching,
               day: parseInt(newRoster.day)
             })
             .eq('id', newRoster.editId)
@@ -379,7 +434,7 @@
             alert('更新單診失敗：' + error.message);
           } else if (data) {
             setRosterShifts(rosterShifts.map(s => s.id === newRoster.editId ? data[0] : s));
-            alert(`已成功獨立更新 ${currentMonth}/${newRoster.day} 的跟診學生！其他週次不受影響。`);
+            alert(`已成功獨立更新 ${currentMonth}/${newRoster.day} 的跟診資料！`);
           }
         } else if (newRoster.isRecurring) {
           if (newRoster.selectedSlots.length === 0) {
@@ -404,6 +459,7 @@
                   shift: slot.shift,
                   doctor: newRoster.doctor,
                   students: studentsArr,
+                  is_teaching: newRoster.isTeaching,
                   is_recurring: true,
                   weekly_day: w
                 });
@@ -416,7 +472,7 @@
             alert('批次新增診次失敗：' + error.message);
           } else if (data) {
             setRosterShifts([...rosterShifts, ...data]);
-            alert(`已成功為【${newRoster.doctor}】一次批次建置整個月共有 ${data.length} 個對應門診！`);
+            alert(`已成功為【${newRoster.doctor}】批次建置整個月共有 ${data.length} 個對應門診！`);
           }
         } else {
           const item = {
@@ -429,6 +485,7 @@
             shift: newRoster.shift, 
             doctor: newRoster.doctor,
             students: studentsArr, 
+            is_teaching: newRoster.isTeaching,
             is_recurring: false, 
             weekly_day: new Date(currentYear, currentMonth - 1, parseInt(newRoster.day)).getDay()
           };
@@ -441,7 +498,7 @@
         }
 
         setShowRosterModal(false);
-        setNewRoster({ editId: null, day: todayObj.getDate(), dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isRecurring: false, selectedSlots: [] });
+        setNewRoster({ editId: null, day: todayObj.getDate(), dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isTeaching: false, isRecurring: false, selectedSlots: [] });
       };
 
       const handleCardClick = (e, shift, day) => {
@@ -454,6 +511,7 @@
             shift: shift.shift,
             doctor: shift.doctor,
             studentName: shift.students ? shift.students.join(', ') : '',
+            isTeaching: shift.is_teaching || false,
             isRecurring: false,
             selectedSlots: []
           });
@@ -520,7 +578,7 @@
                 s.year === currentYear && ((s.month === currentMonth && s.day >= day) || s.month > currentMonth)
               )));
             }
-            alert(`已批次刪除【${shift.doctor} - ${shift.shift}】後續所有門診！`);
+            alert(`已批次刪除門診！`);
           }
         }
       };
@@ -626,7 +684,6 @@
         }
       };
 
-      // 📚 核心課程邏輯（新增 / 編輯 / 切換確認狀態 / 刪除）
       const handleSaveCourse = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！');
@@ -734,10 +791,10 @@
           {/* Header */}
           <header class="bg-white p-4 md:p-6 rounded-2xl shadow-sm border flex flex-wrap justify-between items-center gap-3">
             <div class="flex items-center gap-3">
-              <div class="p-3 md:p-4 bg-blue-50 text-blue-600 rounded-2xl font-bold text-[24px] md:text-[28px]">🏥</div>
+              <div class="p-3 md:p-4 bg-blue-50 text-blue-600 rounded-2xl font-bold text-[24px] md:text-[28px] no-print">🏥</div>
               <div>
                 <h1 class="text-[22px] md:text-[32px] font-bold text-gray-900 leading-tight">臺中慈濟醫院中醫部</h1>
-                <p class="text-gray-500 text-[14px] md:text-[20px] mt-0.5">部務行政、綜合行事曆與學員跟診排班系統</p>
+                <p class="text-gray-500 text-[14px] md:text-[20px] mt-0.5">{currentYear}年{currentMonth}月 行事曆與跟診系統</p>
               </div>
             </div>
             
@@ -796,7 +853,7 @@
                     <h2 class="text-[22px] md:text-[32px] font-bold mt-1">重點動態（{focusY}年{focusM}月{focusD}日）</h2>
                   </div>
 
-                  <div class="flex items-center gap-2 bg-white/10 p-2 rounded-2xl backdrop-blur-sm border border-white/20 text-[14px] md:text-[20px] w-full md:w-auto justify-between">
+                  <div class="flex items-center gap-2 bg-white/10 p-2 rounded-2xl backdrop-blur-sm border border-white/20 text-[14px] md:text-[20px] w-full md:w-auto justify-between no-print">
                     <button onClick={() => handleFocusDateChange(-1)} class="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded-xl font-bold">◀ 前一天</button>
                     <input type="date" value={focusDate} onChange={e => updateFocusDateAndSyncCalendar(e.target.value)} class="bg-white text-gray-900 px-2 py-1 rounded-xl font-bold cursor-pointer outline-none" />
                     <button onClick={() => updateFocusDateAndSyncCalendar(getTodayString())} class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold">今天</button>
@@ -817,7 +874,6 @@
                     return (
                       <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-4 md:p-6 rounded-2xl border-l-8 bg-gray-50 space-y-2 cursor-pointer hover:bg-gray-100 transition" style={{ borderColor: ev.color }}>
                         <div class="text-[20px] md:text-[26px] font-bold text-gray-900">{ev.title}</div>
-                        {/* 📌 需求 2：手機版完美呈現完整會議資訊（完全不帶色彩後綴字眼） */}
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[15px] md:text-[20px] text-gray-700">
                           <div>與會者：<span class="font-bold">{ev.participants || '無'}</span></div>
                           <div>時間：<span class="font-bold text-emerald-800">{ev.time}</span></div>
@@ -838,71 +894,55 @@
             </div>
           )}
 
-          {/* 2. 綜合行事曆 */}
+          {/* 2. 綜合行事曆 (📌 需求 1：柔和馬卡龍色調與黑色字體) */}
           {currentTab === 'calendar' && (
             <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-4 md:space-y-6">
               <div class="flex flex-wrap justify-between items-center gap-3">
                 <div class="flex items-center gap-3">
-                  <button onClick={handlePrevMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold">◀ 上個月</button>
-                  <h2 class="text-[18px] md:text-[26px] font-bold text-gray-900">{currentYear} 年 {currentMonth} 月</h2>
-                  <button onClick={handleNextMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold">下個月 ▶</button>
+                  <button onClick={handlePrevMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold no-print">◀ 上個月</button>
+                  <h2 class="text-[18px] md:text-[26px] font-bold text-gray-900">{currentYear} 年 {currentMonth} 月 綜合行事曆</h2>
+                  <button onClick={handleNextMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold no-print">下個月 ▶</button>
                 </div>
-                {isApproved && (
-                  <button onClick={() => { setNewEvent({ editId: null, title: '', participants: '', day: focusD, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', presenter: '', recorder: '', color: '紅色', isRecurring: false, weeklyDay: 1 }); setShowEventModal(true); }} class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold hover:bg-blue-700">+ 排定事件</button>
-                )}
+                <div class="flex gap-2 no-print">
+                  {isApproved && (
+                    <button onClick={() => { setNewEvent({ editId: null, title: '', participants: '', day: focusD, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', presenter: '', recorder: '', color: '紅色', isRecurring: false, weeklyDay: 1 }); setShowEventModal(true); }} class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold hover:bg-blue-700">+ 排定事件</button>
+                  )}
+                  <button onClick={() => window.print()} class="border border-gray-300 px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold hover:bg-gray-100 flex items-center gap-1.5">
+                    🖨️ 列印全月行事曆
+                  </button>
+                </div>
               </div>
 
-              {/* 桌上型 7 欄月曆 */}
-              <div class="hidden md:grid grid-cols-7 border-t border-l text-[20px]">
+              {/* 🖨️ 7 欄行事曆 */}
+              <div class="grid grid-cols-7 border-t border-l text-[11px] md:text-[18px] print-table">
                 {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map((d, i) => (
-                  <div key={d} class={`p-3 text-center font-bold border-b border-r bg-gray-50 ${i === 0 || i === 6 ? 'text-red-500' : 'text-gray-800'}`}>{d}</div>
+                  <div key={d} class={`p-1.5 md:p-3 text-center font-bold border-b border-r bg-gray-50 ${i === 0 || i === 6 ? 'text-red-500' : 'text-gray-800'}`}>{d}</div>
                 ))}
                 {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-                  <div key={'empty-' + i} class="p-2 min-h-[160px] border-b border-r bg-gray-50/20"></div>
+                  <div key={'empty-' + i} class="p-1 min-h-[110px] border-b border-r bg-gray-50/20 print-cell"></div>
                 ))}
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
                   const dayEvents = events.filter(e => e.year === currentYear && e.month === currentMonth && e.day === day);
                   return (
-                    <div key={day} class="p-2 min-h-[160px] border-b border-r space-y-2 hover:bg-blue-50/20 transition">
-                      <div class="font-bold text-gray-800">{day}日</div>
+                    <div key={day} class="p-1.5 md:p-2.5 min-h-[110px] border-b border-r space-y-1.5 hover:bg-blue-50/20 transition print-cell">
+                      <div class="font-bold text-gray-900 border-b pb-0.5">{day}日</div>
                       {dayEvents.map(ev => {
                         const presenterName = parsePresenter(ev.note);
                         return (
-                          <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-2.5 rounded-xl text-white font-bold cursor-pointer hover:opacity-90 shadow-sm space-y-1 text-[13px] leading-snug" style={{ backgroundColor: ev.color }}>
-                            <div class="text-[15px] border-b border-white/30 pb-0.5">{ev.title}</div>
-                            <div>時間：{ev.time}</div>
-                            {ev.instructor && <div>主持：{ev.instructor}</div>}
-                            {presenterName && <div>報告：{presenterName}</div>}
-                            {ev.participants && <div>與會：{ev.participants}</div>}
-                            {ev.recorder && <div>紀錄：{ev.recorder}</div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* 手機專用清單 */}
-              <div class="md:hidden space-y-3">
-                {Array.from({ length: daysInMonth }).map((_, i) => {
-                  const day = i + 1;
-                  const dayEvents = events.filter(e => e.year === currentYear && e.month === currentMonth && e.day === day);
-                  if (dayEvents.length === 0) return null;
-                  return (
-                    <div key={day} class="bg-gray-50 p-3 rounded-xl border space-y-2">
-                      <div class="font-bold text-gray-800 text-[16px] border-b pb-1">{currentMonth}月{day}日</div>
-                      {dayEvents.map(ev => {
-                        const presenterName = parsePresenter(ev.note);
-                        return (
-                          <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-3 rounded-xl text-white font-bold text-[15px] space-y-1" style={{ backgroundColor: ev.color }}>
-                            <div class="text-[17px] border-b border-white/30 pb-1">{ev.title}</div>
-                            <div>時間：{ev.time}</div>
-                            {ev.instructor && <div>主持：{ev.instructor}</div>}
-                            {presenterName && <div>報告：{presenterName}</div>}
-                            {ev.participants && <div>與會：{ev.participants}</div>}
-                            {ev.recorder && <div>紀錄：{ev.recorder}</div>}
+                          <div 
+                            key={ev.id} 
+                            onClick={() => setSelectedEvent(ev)} 
+                            class="p-2 rounded-lg font-bold cursor-pointer hover:opacity-90 shadow-sm space-y-0.5 text-[11px] md:text-[13px] leading-snug print-event-card border border-gray-300/80" 
+                            style={getEventCardStyle(ev)}
+                          >
+                            <div class="text-[12px] md:text-[14px] border-b border-gray-400/40 pb-0.5 font-extrabold text-gray-900">{ev.title}</div>
+                            <div class="text-gray-900">時間：{ev.time}</div>
+                            {ev.location && <div class="text-gray-800">地點：{ev.location}</div>}
+                            {ev.instructor && <div class="text-gray-800">主持：{ev.instructor}</div>}
+                            {presenterName && <div class="text-gray-800">報告：{presenterName}</div>}
+                            {ev.participants && <div class="text-gray-800">與會：{ev.participants}</div>}
+                            {ev.recorder && <div class="text-gray-800">紀錄：{ev.recorder}</div>}
                           </div>
                         );
                       })}
@@ -912,7 +952,7 @@
               </div>
 
               {/* 說明對照框 */}
-              <div class="bg-gray-50 p-4 md:p-5 rounded-2xl border border-gray-300 text-[15px] md:text-[18px] text-gray-800 space-y-1 font-medium mt-4">
+              <div class="bg-gray-50 p-3 md:p-5 rounded-2xl border border-gray-300 text-[13px] md:text-[18px] text-gray-800 space-y-0.5 font-medium mt-4">
                 <div>&lt;全&gt;中醫部全體主治、實習、住院醫師皆須參加；</div>
                 <div>&lt;實住12&gt;實習醫師跟第一年、第二年住院醫師需參加。</div>
                 <div>&lt;內&gt;輪訓內科跟當科資深、主治醫師者需參加；</div>
@@ -923,7 +963,7 @@
             </div>
           )}
 
-          {/* 3. 跟診表 */}
+          {/* 3. 跟診表 (📌 需求 2：若無跟診學員呈現空白，不顯示待認領) */}
           {currentTab === 'roster' && (
             <div class="space-y-4 md:space-y-6">
               <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-3">
@@ -934,12 +974,12 @@
                     <button onClick={handleNextMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold">下個月 ▶</button>
                   </div>
                   {isApproved && (
-                    <button onClick={() => { setNewRoster({ editId: null, day: focusD, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); }} class="bg-gray-900 text-white px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold">⚙️ 排診 / 批次建立門診</button>
+                    <button onClick={() => { setNewRoster({ editId: null, day: focusD, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isTeaching: false, isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); }} class="bg-gray-900 text-white px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold">⚙️ 排診 / 批次建立門診</button>
                   )}
                 </div>
 
                 <div class="flex gap-2 pt-2 border-t overflow-x-auto no-scrollbar whitespace-nowrap">
-                  {['內一', '內二', '婦兒科', '傷科', '針灸科'].map(dept => (
+                  {['內一', '內二', '婦兒科', '傷科', '針灸科', '王老師打字診'].map(dept => (
                     <button key={dept} onClick={() => setSelectedDept(dept)} class={`px-4 py-2 rounded-xl text-[16px] md:text-[22px] font-bold border transition ${selectedDept === dept ? 'bg-blue-600 text-white border-blue-600 shadow' : 'bg-white text-gray-700'}`}>{dept}</button>
                   ))}
                 </div>
@@ -958,12 +998,18 @@
                     .sort((a, b) => ({ '早診': 1, '午診': 2, '晚診': 3 }[a.shift] - { '早診': 1, '午診': 2, '晚診': 3 }[b.shift]));
 
                   return (
-                    <div key={day} onClick={() => { if (isApproved) { setNewRoster({ editId: null, day: day, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); } }} class="p-2 min-h-[150px] border-b border-r space-y-2 hover:bg-blue-50/30 cursor-pointer">
+                    <div key={day} onClick={() => { if (isApproved) { setNewRoster({ editId: null, day: day, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isTeaching: false, isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); } }} class="p-2 min-h-[150px] border-b border-r space-y-2 hover:bg-blue-50/30 cursor-pointer">
                       <div class="font-bold text-gray-800">{day}日</div>
                       {allDayShifts.map(shift => (
-                        <div key={shift.id} onClick={(e) => handleCardClick(e, shift, day)} class={`border p-2 rounded-xl text-[16px] transition space-y-1 ${getShiftStyle(shift.shift)}`}>
-                          <div class="font-bold">{shift.doctor} ({shift.shift})</div>
-                          <div class="text-[14px]">跟診學員：{shift.students?.length ? shift.students.join('、') : '待認領'}</div>
+                        <div key={shift.id} onClick={(e) => handleCardClick(e, shift, day)} class={`border p-2 rounded-xl text-[16px] transition space-y-1 relative ${getShiftStyle(shift.shift, shift.is_teaching)}`}>
+                          <div class="flex justify-between items-center font-bold">
+                            <span>{shift.doctor} ({shift.shift})</span>
+                            {shift.is_teaching && (
+                              <span class="text-[11px] bg-pink-600 text-white px-1.5 py-0.5 rounded font-bold">教學診</span>
+                            )}
+                          </div>
+                          {/* 📌 需求 2：無學員時留空，不填寫待認領 */}
+                          <div class="text-[14px]">跟診學員：{shift.students?.length ? shift.students.join('、') : ''}</div>
                         </div>
                       ))}
                     </div>
@@ -984,12 +1030,16 @@
                       </div>
                       <div class="space-y-2">
                         {dayShifts.map(shift => (
-                          <div key={shift.id} onClick={(e) => handleCardClick(e, shift, day)} class={`p-3 rounded-xl border ${getShiftStyle(shift.shift)}`}>
+                          <div key={shift.id} onClick={(e) => handleCardClick(e, shift, day)} class={`p-3 rounded-xl border ${getShiftStyle(shift.shift, shift.is_teaching)}`}>
                             <div class="flex justify-between items-center">
-                              <div class="font-bold text-[18px]">{shift.doctor}（{shift.shift}）</div>
+                              <div class="font-bold text-[18px] flex items-center gap-2">
+                                <span>{shift.doctor}（{shift.shift}）</span>
+                                {shift.is_teaching && <span class="text-[12px] bg-pink-600 text-white px-2 py-0.5 rounded font-bold">教學診</span>}
+                              </div>
                               {isApproved && <button onClick={(e) => handleDeleteRoster(e, shift, day)} class="text-red-500 font-bold p-1">🗑️</button>}
                             </div>
-                            <div class="text-[15px] opacity-90 mt-1 font-medium">跟診學員：{shift.students?.length ? shift.students.join('、') : '待認領'}</div>
+                            {/* 📌 需求 2：手機版無學員時同樣留空 */}
+                            <div class="text-[15px] opacity-90 mt-1 font-medium">跟診學員：{shift.students?.length ? shift.students.join('、') : ''}</div>
                           </div>
                         ))}
                       </div>
@@ -1007,7 +1057,7 @@
                 <div>
                   <h2 class="text-[22px] md:text-[28px] font-bold text-gray-900">中醫部醫師陣容與幹部</h2>
                   <p class="text-[14px] md:text-[18px] text-gray-500 mt-1">
-                    {isApproved ? '點擊任何一位醫師的卡片即可進行編輯與修改' : '涵蓋當月部總、科總、住院醫師、外訓與實習醫師'}
+                    {isApproved ? '點擊任何一位醫師的卡片即可進行編輯與修改' : '當月部總、科總、住院醫師、外訓與實習醫師資訊'}
                   </p>
                 </div>
                 {isApproved && (
@@ -1024,210 +1074,99 @@
               </div>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* 1. 當月部總醫師 */}
                 <div class="p-5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-3 shadow-sm">
                   <h3 class="font-bold text-[20px] md:text-[24px] text-blue-900 border-b border-blue-200 pb-2">當月部總醫師</h3>
                   <div class="space-y-2">
                     {personnelList.filter(p => p.category === 'chiefDepartment').map(p => (
-                      <div 
-                        key={p.id} 
-                        onClick={() => openEditPersonnelModal(p)}
-                        class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-blue-500 hover:shadow-md cursor-pointer' : ''}`}
-                      >
-                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">
-                          {p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '總醫師'})</span>
-                        </div>
-                        {isApproved && (
-                          <div class="flex items-center gap-2">
-                            <span class="text-[13px] text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded">編輯</span>
-                            <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>
-                          </div>
-                        )}
+                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-blue-500 hover:shadow-md cursor-pointer' : ''}`}>
+                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '總醫師'})</span></div>
+                        {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
                       </div>
                     ))}
-                    {personnelList.filter(p => p.category === 'chiefDepartment').length === 0 && <div class="text-gray-400 text-[16px] py-2">尚無記錄</div>}
                   </div>
                 </div>
 
-                {/* 2. 當月科總醫師 */}
                 <div class="p-5 rounded-2xl bg-indigo-50/80 border border-indigo-200 space-y-3 shadow-sm">
                   <h3 class="font-bold text-[20px] md:text-[24px] text-indigo-900 border-b border-indigo-200 pb-2">當月科總醫師</h3>
                   <div class="space-y-2">
                     {personnelList.filter(p => p.category === 'chiefSections').map(p => (
-                      <div 
-                        key={p.id} 
-                        onClick={() => openEditPersonnelModal(p)}
-                        class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-indigo-500 hover:shadow-md cursor-pointer' : ''}`}
-                      >
-                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">
-                          {p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '科總'})</span>
-                        </div>
-                        {isApproved && (
-                          <div class="flex items-center gap-2">
-                            <span class="text-[13px] text-indigo-600 font-bold bg-indigo-50 px-2 py-1 rounded">編輯</span>
-                            <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>
-                          </div>
-                        )}
+                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-indigo-500 hover:shadow-md cursor-pointer' : ''}`}>
+                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '科總'})</span></div>
+                        {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
                       </div>
                     ))}
-                    {personnelList.filter(p => p.category === 'chiefSections').length === 0 && <div class="text-gray-400 text-[16px] py-2">尚無記錄</div>}
                   </div>
                 </div>
 
-                {/* 3. 各科住院醫師 */}
                 <div class="col-span-1 md:col-span-2 p-5 md:p-6 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-4 shadow-sm">
-                  <div class="flex justify-between items-center border-b border-emerald-200 pb-2">
-                    <h3 class="font-bold text-[22px] md:text-[26px] text-emerald-900">各科住院醫師</h3>
-                  </div>
-                  
+                  <h3 class="font-bold text-[22px] md:text-[26px] text-emerald-900 border-b border-emerald-200 pb-2">各科住院醫師</h3>
                   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {personnelList.filter(p => p.category === 'residents').map(p => (
-                      <div 
-                        key={p.id} 
-                        onClick={() => openEditPersonnelModal(p)}
-                        class={`p-4 rounded-xl border bg-white space-y-1.5 transition ${isApproved ? 'hover:border-emerald-500 hover:shadow-md cursor-pointer' : ''}`}
-                      >
-                        <div class="flex justify-between items-center">
-                          <span class="font-bold text-[20px] text-emerald-950">{p.name}</span>
-                          {isApproved && (
-                            <div class="flex items-center gap-1">
-                              <span class="text-[12px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded">修改</span>
-                              <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1">刪除</button>
-                            </div>
-                          )}
-                        </div>
-                        <div class="text-[15px] text-gray-600 bg-emerald-50/50 p-2 rounded-lg border border-emerald-100">
-                          {p.note || '未指定科別與負責醫師'}
-                        </div>
+                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-4 rounded-xl border bg-white space-y-1.5 transition ${isApproved ? 'hover:border-emerald-500 hover:shadow-md cursor-pointer' : ''}`}>
+                        <div class="flex justify-between items-center"><span class="font-bold text-[20px] text-emerald-950">{p.name}</span>{isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1">刪除</button>}</div>
+                        <div class="text-[15px] text-gray-600 bg-emerald-50/50 p-2 rounded-lg border border-emerald-100">{p.note || '未指定'}</div>
                       </div>
                     ))}
-                    {personnelList.filter(p => p.category === 'residents').length === 0 && <div class="text-gray-400 text-[16px] py-2 col-span-full">尚無住院醫師資料</div>}
                   </div>
                 </div>
 
-                {/* 4. 專科輪訓醫師 */}
                 <div class="p-5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-3 shadow-sm">
                   <h3 class="font-bold text-[20px] md:text-[24px] text-amber-900 border-b border-amber-200 pb-2">專科輪訓醫師</h3>
                   <div class="space-y-2">
                     {personnelList.filter(p => p.category === 'specialtyTrainings').map(p => (
-                      <div 
-                        key={p.id} 
-                        onClick={() => openEditPersonnelModal(p)}
-                        class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-amber-500 hover:shadow-md cursor-pointer' : ''}`}
-                      >
-                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">
-                          {p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '專科輪訓'})</span>
-                        </div>
-                        {isApproved && (
-                          <div class="flex items-center gap-2">
-                            <span class="text-[13px] text-amber-700 font-bold bg-amber-50 px-2 py-1 rounded">編輯</span>
-                            <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>
-                          </div>
-                        )}
+                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-amber-500 hover:shadow-md cursor-pointer' : ''}`}>
+                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '輪訓'})</span></div>
+                        {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
                       </div>
                     ))}
-                    {personnelList.filter(p => p.category === 'specialtyTrainings').length === 0 && <div class="text-gray-400 text-[16px] py-2">尚無記錄</div>}
                   </div>
                 </div>
 
-                {/* 5. 外訓醫師 */}
                 <div class="p-5 rounded-2xl bg-purple-50/80 border border-purple-200 space-y-3 shadow-sm">
                   <h3 class="font-bold text-[20px] md:text-[24px] text-purple-900 border-b border-purple-200 pb-2">外訓醫師</h3>
                   <div class="space-y-2">
                     {personnelList.filter(p => p.category === 'externalTrainings').map(p => (
-                      <div 
-                        key={p.id} 
-                        onClick={() => openEditPersonnelModal(p)}
-                        class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-purple-500 hover:shadow-md cursor-pointer' : ''}`}
-                      >
-                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">
-                          {p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '外訓'})</span>
-                        </div>
-                        {isApproved && (
-                          <div class="flex items-center gap-2">
-                            <span class="text-[13px] text-purple-700 font-bold bg-purple-50 px-2 py-1 rounded">編輯</span>
-                            <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>
-                          </div>
-                        )}
+                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-purple-500 hover:shadow-md cursor-pointer' : ''}`}>
+                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '外訓'})</span></div>
+                        {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
                       </div>
                     ))}
-                    {personnelList.filter(p => p.category === 'externalTrainings').length === 0 && <div class="text-gray-400 text-[16px] py-2">尚無記錄</div>}
                   </div>
                 </div>
 
-                {/* 6. 輪訓實習醫師 */}
                 <div class="col-span-1 md:col-span-2 p-5 md:p-6 rounded-2xl bg-teal-50/80 border border-teal-200 space-y-4 shadow-sm">
-                  <div class="flex justify-between items-center border-b border-teal-200 pb-2">
-                    <h3 class="font-bold text-[22px] md:text-[26px] text-teal-900">輪訓實習醫師</h3>
-                  </div>
-
+                  <h3 class="font-bold text-[22px] md:text-[26px] text-teal-900 border-b border-teal-200 pb-2">輪訓實習醫師</h3>
                   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {personnelList.filter(p => p.category === 'interns').map(p => (
-                      <div 
-                        key={p.id} 
-                        onClick={() => openEditPersonnelModal(p)}
-                        class={`p-4 rounded-xl border bg-white space-y-2 transition ${isApproved ? 'hover:border-teal-500 hover:shadow-md cursor-pointer' : ''}`}
-                      >
-                        <div class="flex justify-between items-center">
-                          <span class="font-bold text-[20px] text-teal-950">{p.name}</span>
-                          {isApproved && (
-                            <div class="flex items-center gap-1">
-                              <span class="text-[12px] text-teal-700 font-bold bg-teal-50 px-2 py-0.5 rounded">修改</span>
-                              <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1">刪除</button>
-                            </div>
-                          )}
-                        </div>
-                        <div class="text-[15px] font-bold text-teal-800 bg-teal-50 p-2 rounded-lg border border-teal-100">
-                          所屬：{p.note || '未指定'}
-                        </div>
+                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-4 rounded-xl border bg-white space-y-2 transition ${isApproved ? 'hover:border-teal-500 hover:shadow-md cursor-pointer' : ''}`}>
+                        <div class="flex justify-between items-center"><span class="font-bold text-[20px] text-teal-950">{p.name}</span>{isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1">刪除</button>}</div>
+                        <div class="text-[15px] font-bold text-teal-800 bg-teal-50 p-2 rounded-lg border border-teal-100">所屬：{p.note || '未指定'}</div>
                       </div>
                     ))}
-                    {personnelList.filter(p => p.category === 'interns').length === 0 && <div class="text-gray-400 text-[16px] py-2 col-span-full">尚無實習醫師資料</div>}
                   </div>
                 </div>
-
               </div>
             </div>
           )}
 
-          {/* 5. 📌 需求 1：核心課程一覽表（字體約 12px-15px） */}
+          {/* 5. 核心課程一覽表 */}
           {currentTab === 'courses' && (
             <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-6 text-[13px] md:text-[15px]">
               <div class="flex flex-wrap justify-between items-center border-b pb-3 gap-3">
                 <div>
                   <h2 class="text-[18px] md:text-[22px] font-bold text-gray-900">📚 核心課程一覽表</h2>
-                  <p class="text-[12px] md:text-[14px] text-gray-500 mt-0.5">包含年度已排程與尚未排程備選課程清單</p>
+                  <p class="text-[12px] md:text-[14px] text-gray-500 mt-0.5">年度核心課程一覽</p>
                 </div>
                 {isApproved && (
                   <div class="flex gap-2">
-                    <button 
-                      onClick={() => {
-                        setNewCourse({ editId: null, isScheduled: true, date: todayStr, instructor: '', content: '', isConfirmed: false });
-                        setShowCourseModal(true);
-                      }} 
-                      class="bg-blue-600 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-blue-700 text-[13px] md:text-[14px]"
-                    >
-                      + 新增年度課程
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setNewCourse({ editId: null, isScheduled: false, date: '未定', instructor: '', content: '', isConfirmed: false });
-                        setShowCourseModal(true);
-                      }} 
-                      class="bg-amber-600 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-amber-700 text-[13px] md:text-[14px]"
-                    >
-                      + 新增未排程課程
-                    </button>
+                    <button onClick={() => { setNewCourse({ editId: null, isScheduled: true, date: todayStr, instructor: '', content: '', isConfirmed: false }); setShowCourseModal(true); }} class="bg-blue-600 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-blue-700 text-[13px] md:text-[14px]">+ 新增年度課程</button>
+                    <button onClick={() => { setNewCourse({ editId: null, isScheduled: false, date: '未定', instructor: '', content: '', isConfirmed: false }); setShowCourseModal(true); }} class="bg-amber-600 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-amber-700 text-[13px] md:text-[14px]">+ 新增未排程課程</button>
                   </div>
                 )}
               </div>
 
-              {/* 區塊 1：年度核心課程內容 */}
               <div class="space-y-3">
-                <h3 class="text-[15px] md:text-[17px] font-bold text-blue-900 border-l-4 border-blue-600 pl-2">
-                  年度核心課程內容
-                </h3>
+                <h3 class="text-[15px] md:text-[17px] font-bold text-blue-900 border-l-4 border-blue-600 pl-2">年度核心課程內容</h3>
                 <div class="overflow-x-auto rounded-xl border">
                   <table class="w-full text-left border-collapse">
                     <thead>
@@ -1240,46 +1179,31 @@
                       </tr>
                     </thead>
                     <tbody class="divide-y text-[13px] md:text-[14px]">
-                      {courses
-                        .filter(c => c.is_scheduled)
-                        .sort((a, b) => (a.course_date || '').localeCompare(b.course_date || ''))
-                        .map(c => (
-                          <tr key={c.id} class={`hover:bg-gray-50 transition ${c.is_confirmed ? 'font-bold bg-blue-50/30' : ''}`}>
-                            {isApproved && (
-                              <td class="p-2.5 border-r text-center">
-                                <input 
-                                  type="checkbox" 
-                                  checked={c.is_confirmed || false} 
-                                  onChange={() => handleToggleCourseConfirmed(c)}
-                                  class="w-4 h-4 accent-blue-600 cursor-pointer"
-                                  title="勾選即標示為粗體"
-                                />
-                              </td>
-                            )}
-                            <td class="p-2.5 border-r text-gray-800">{c.course_date || '未定'}</td>
-                            <td class="p-2.5 border-r text-gray-900">{c.instructor || '無'}</td>
-                            <td class="p-2.5 border-r text-gray-800 whitespace-pre-line">{c.content}</td>
-                            {isApproved && (
-                              <td class="p-2.5 text-center space-x-1 whitespace-nowrap">
-                                <button onClick={() => openEditCourseModal(c)} class="text-blue-600 hover:underline">編輯</button>
-                                <button onClick={() => handleDeleteCourse(c.id)} class="text-red-500 hover:underline">刪除</button>
-                              </td>
-                            )}
-                          </tr>
-                        ))}
-                      {courses.filter(c => c.is_scheduled).length === 0 && (
-                        <tr><td colSpan="5" class="p-6 text-center text-gray-400">尚無年度核心課程內容</td></tr>
-                      )}
+                      {courses.filter(c => c.is_scheduled).sort((a, b) => (a.course_date || '').localeCompare(b.course_date || '')).map(c => (
+                        <tr key={c.id} class={`hover:bg-gray-50 transition ${c.is_confirmed ? 'font-bold bg-blue-50/30' : ''}`}>
+                          {isApproved && (
+                            <td class="p-2.5 border-r text-center">
+                              <input type="checkbox" checked={c.is_confirmed || false} onChange={() => handleToggleCourseConfirmed(c)} class="w-4 h-4 accent-blue-600 cursor-pointer" />
+                            </td>
+                          )}
+                          <td class="p-2.5 border-r text-gray-800">{c.course_date || '未定'}</td>
+                          <td class="p-2.5 border-r text-gray-900">{c.instructor || '無'}</td>
+                          <td class="p-2.5 border-r text-gray-800 whitespace-pre-line">{c.content}</td>
+                          {isApproved && (
+                            <td class="p-2.5 text-center space-x-1 whitespace-nowrap">
+                              <button onClick={() => openEditCourseModal(c)} class="text-blue-600 hover:underline">編輯</button>
+                              <button onClick={() => handleDeleteCourse(c.id)} class="text-red-500 hover:underline">刪除</button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               </div>
 
-              {/* 區塊 2：尚未排程課程 */}
               <div class="space-y-3 pt-4 border-t">
-                <h3 class="text-[15px] md:text-[17px] font-bold text-amber-900 border-l-4 border-amber-600 pl-2">
-                  尚未排程課程
-                </h3>
+                <h3 class="text-[15px] md:text-[17px] font-bold text-amber-900 border-l-4 border-amber-600 pl-2">尚未排程課程</h3>
                 <div class="overflow-x-auto rounded-xl border">
                   <table class="w-full text-left border-collapse">
                     <thead>
@@ -1291,24 +1215,19 @@
                       </tr>
                     </thead>
                     <tbody class="divide-y text-[13px] md:text-[14px]">
-                      {courses
-                        .filter(c => !c.is_scheduled)
-                        .map(c => (
-                          <tr key={c.id} class="hover:bg-gray-50 transition">
-                            <td class="p-2.5 border-r text-gray-700">{c.course_date || '未定'}</td>
-                            <td class="p-2.5 border-r font-medium text-gray-900">{c.instructor || '無'}</td>
-                            <td class="p-2.5 border-r text-gray-800 whitespace-pre-line">{c.content}</td>
-                            {isApproved && (
-                              <td class="p-2.5 text-center space-x-1 whitespace-nowrap">
-                                <button onClick={() => openEditCourseModal(c)} class="text-blue-600 hover:underline">編輯</button>
-                                <button onClick={() => handleDeleteCourse(c.id)} class="text-red-500 hover:underline">刪除</button>
-                              </td>
-                            )}
-                          </tr>
-                        ))}
-                      {courses.filter(c => !c.is_scheduled).length === 0 && (
-                        <tr><td colSpan="4" class="p-6 text-center text-gray-400">尚無待排程課程</td></tr>
-                      )}
+                      {courses.filter(c => !c.is_scheduled).map(c => (
+                        <tr key={c.id} class="hover:bg-gray-50 transition">
+                          <td class="p-2.5 border-r text-gray-700">{c.course_date || '未定'}</td>
+                          <td class="p-2.5 border-r font-medium text-gray-900">{c.instructor || '無'}</td>
+                          <td class="p-2.5 border-r text-gray-800 whitespace-pre-line">{c.content}</td>
+                          {isApproved && (
+                            <td class="p-2.5 text-center space-x-1 whitespace-nowrap">
+                              <button onClick={() => openEditCourseModal(c)} class="text-blue-600 hover:underline">編輯</button>
+                              <button onClick={() => handleDeleteCourse(c.id)} class="text-red-500 hover:underline">刪除</button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -1390,7 +1309,6 @@
                   {newEvent.editId ? '編輯行事曆事件' : '排定行事曆事件'}
                 </h3>
                 <form onSubmit={handleSaveEvent} class="space-y-4 text-[16px] md:text-[18px]">
-                  
                   {!newEvent.editId && (
                     <div class="bg-gray-100 p-2 rounded-xl flex gap-2">
                       <button type="button" onClick={() => setNewEvent({...newEvent, isRecurring: false})} class={`flex-1 py-2 rounded-lg font-bold ${!newEvent.isRecurring ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}>指定單日事件</button>
@@ -1400,11 +1318,7 @@
 
                   <div>
                     <label class="block text-gray-700 font-bold mb-1">色彩等級</label>
-                    <select 
-                      value={newEvent.color} 
-                      onChange={e => setNewEvent({...newEvent, color: e.target.value})} 
-                      class="w-full border rounded-xl p-3 bg-gray-50 font-bold"
-                    >
+                    <select value={newEvent.color} onChange={e => setNewEvent({...newEvent, color: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold">
                       <option value="紅色">紅色（高度重要）</option>
                       <option value="黃色">黃色（中度重要）</option>
                       <option value="綠色">綠色（一般事件）</option>
@@ -1425,40 +1339,13 @@
                     </div>
                   )}
 
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">標題</label>
-                    <input type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required placeholder="如：須彌山講座" />
-                  </div>
-
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">與會者</label>
-                    <input type="text" value={newEvent.participants} onChange={e => setNewEvent({...newEvent, participants: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：全體醫師、實習醫師" />
-                  </div>
-
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">時間</label>
-                    <input type="text" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" placeholder="如：07:30~08:30" />
-                  </div>
-
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">地點</label>
-                    <input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：第一會議室" />
-                  </div>
-
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">主持醫師</label>
-                    <input type="text" value={newEvent.instructor} onChange={e => setNewEvent({...newEvent, instructor: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：黃仲諄主任" />
-                  </div>
-
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">報告醫師</label>
-                    <input type="text" value={newEvent.presenter} onChange={e => setNewEvent({...newEvent, presenter: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：張醫師" />
-                  </div>
-
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">紀錄</label>
-                    <input type="text" value={newEvent.recorder} onChange={e => setNewEvent({...newEvent, recorder: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：蕭醫師" />
-                  </div>
+                  <div><label class="block text-gray-700 font-bold mb-1">標題</label><input type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required placeholder="如：須彌山講座" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">與會者</label><input type="text" value={newEvent.participants} onChange={e => setNewEvent({...newEvent, participants: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：全體醫師、實習醫師" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">時間</label><input type="text" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" placeholder="如：07:30~08:30" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">地點</label><input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：第一會議室" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">主持醫師</label><input type="text" value={newEvent.instructor} onChange={e => setNewEvent({...newEvent, instructor: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：黃仲諄主任" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">報告醫師</label><input type="text" value={newEvent.presenter} onChange={e => setNewEvent({...newEvent, presenter: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：張醫師" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">紀錄</label><input type="text" value={newEvent.recorder} onChange={e => setNewEvent({...newEvent, recorder: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：蕭醫師" /></div>
 
                   <div class="flex justify-end gap-3 pt-3">
                     <button type="button" onClick={() => setShowEventModal(false)} class="px-5 py-2.5 border rounded-xl font-bold text-gray-600">取消</button>
@@ -1487,6 +1374,19 @@
                   <div>
                     <label class="block text-gray-700 font-bold mb-1">跟診主治醫師</label>
                     <input type="text" value={newRoster.doctor} onChange={e => setNewRoster({...newRoster, doctor: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required />
+                  </div>
+
+                  <div class="flex items-center gap-3 bg-pink-50 p-3.5 rounded-2xl border border-pink-200">
+                    <input 
+                      type="checkbox" 
+                      id="isTeachingCheck" 
+                      checked={newRoster.isTeaching} 
+                      onChange={e => setNewRoster({...newRoster, isTeaching: e.target.checked})} 
+                      class="w-5 h-5 accent-pink-600 cursor-pointer" 
+                    />
+                    <label htmlFor="isTeachingCheck" class="font-bold text-pink-900 text-[16px] md:text-[18px] cursor-pointer">
+                      開通為「教學診」（勾選後呈現粉紅色背景與專屬標籤）
+                    </label>
                   </div>
 
                   {newRoster.isRecurring && !newRoster.editId ? (
@@ -1566,22 +1466,15 @@
             </div>
           )}
 
-          {/* Modal：新增/修改 醫師彈窗 */}
+          {/* Modal：新增/修改 醫師 */}
           {showPersonnelModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
-                <h3 class="font-bold text-[22px] text-gray-900 border-b pb-3">
-                  {newPerson.editId ? '修改醫師資料' : '新增醫師名單'}
-                </h3>
+                <h3 class="font-bold text-[22px] text-gray-900 border-b pb-3">{newPerson.editId ? '修改醫師資料' : '新增醫師名單'}</h3>
                 <form onSubmit={handleSavePersonnel} class="space-y-4 text-[16px] md:text-[18px]">
-                  
                   <div>
                     <label class="block text-gray-700 font-bold mb-1">醫師類別</label>
-                    <select 
-                      value={newPerson.category} 
-                      onChange={e => setNewPerson({...newPerson, category: e.target.value})} 
-                      class="w-full border rounded-xl p-3 bg-gray-50 font-bold"
-                    >
+                    <select value={newPerson.category} onChange={e => setNewPerson({...newPerson, category: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold">
                       <option value="chiefDepartment">當月部總醫師</option>
                       <option value="chiefSections">當月科總醫師</option>
                       <option value="residents">各科住院醫師</option>
@@ -1590,92 +1483,10 @@
                       <option value="interns">輪訓實習醫師</option>
                     </select>
                   </div>
-
                   <div>
                     <label class="block text-gray-700 font-bold mb-1">醫師姓名</label>
-                    <input 
-                      type="text" 
-                      value={newPerson.name} 
-                      onChange={e => setNewPerson({...newPerson, name: e.target.value})} 
-                      class="w-full border rounded-xl p-3 bg-gray-50 font-bold" 
-                      placeholder="請輸入醫師姓名" 
-                      required 
-                    />
+                    <input type="text" value={newPerson.name} onChange={e => setNewPerson({...newPerson, name: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required />
                   </div>
-
-                  {newPerson.category === 'residents' && (
-                    <div class="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-3">
-                      <div>
-                        <label class="block text-emerald-900 font-bold mb-1">所屬科別</label>
-                        <select 
-                          value={newPerson.deptName} 
-                          onChange={e => setNewPerson({...newPerson, deptName: e.target.value})} 
-                          class="w-full border rounded-xl p-3 bg-white font-bold"
-                        >
-                          <option value="內一">內一</option>
-                          <option value="內二">內二</option>
-                          <option value="婦兒科">婦兒科</option>
-                          <option value="針灸科">針灸科</option>
-                          <option value="傷科">傷科</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label class="block text-emerald-900 font-bold mb-1">負責的主治醫師</label>
-                        <input 
-                          type="text" 
-                          value={newPerson.supervisorDoctor} 
-                          onChange={e => setNewPerson({...newPerson, supervisorDoctor: e.target.value})} 
-                          class="w-full border rounded-xl p-3 bg-white font-bold" 
-                          placeholder="例如：黃仲諄主任" 
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {newPerson.category === 'interns' && (
-                    <div class="p-4 bg-teal-50 rounded-2xl border border-teal-200 space-y-3">
-                      <div>
-                        <label class="block text-teal-900 font-bold mb-1">所屬組別 (A-H 下拉選單)</label>
-                        <select 
-                          value={newPerson.groupCode} 
-                          onChange={e => setNewPerson({...newPerson, groupCode: e.target.value})} 
-                          class="w-full border rounded-xl p-3 bg-white font-bold"
-                        >
-                          {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map(g => (
-                            <option key={g} value={`${g}組`}>{g} 組</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label class="block text-teal-900 font-bold mb-1">跑的科別 (下拉選單)</label>
-                        <select 
-                          value={newPerson.rotationDept} 
-                          onChange={e => setNewPerson({...newPerson, rotationDept: e.target.value})} 
-                          class="w-full border rounded-xl p-3 bg-white font-bold"
-                        >
-                          <option value="內一">內一</option>
-                          <option value="內二">內二</option>
-                          <option value="婦兒科">婦兒科</option>
-                          <option value="針灸科">針灸科</option>
-                          <option value="傷科">傷科</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {['chiefDepartment', 'chiefSections', 'specialtyTrainings', 'externalTrainings'].includes(newPerson.category) && (
-                    <div>
-                      <label class="block text-gray-700 font-bold mb-1">職稱 / 備註</label>
-                      <input 
-                        type="text" 
-                        value={newPerson.note} 
-                        onChange={e => setNewPerson({...newPerson, note: e.target.value})} 
-                        class="w-full border rounded-xl p-3 bg-gray-50" 
-                        placeholder="如：行政總醫師、教學總醫師..." 
-                      />
-                    </div>
-                  )}
-
                   <div class="flex justify-end gap-3 pt-3">
                     <button type="button" onClick={() => setShowPersonnelModal(false)} class="px-5 py-2.5 border rounded-xl font-bold">取消</button>
                     <button type="submit" class="px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl">儲存變更</button>
@@ -1685,79 +1496,23 @@
             </div>
           )}
 
-          {/* Modal：新增 / 編輯 核心課程彈窗 */}
+          {/* Modal：新增/編輯 核心課程 */}
           {showCourseModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-                <h3 class="font-bold text-[20px] text-gray-900 border-b pb-3">
-                  {newCourse.editId ? '✏️ 編輯核心課程' : '📚 新增核心課程'}
-                </h3>
+                <h3 class="font-bold text-[20px] text-gray-900 border-b pb-3">{newCourse.editId ? '✏️ 編輯核心課程' : '📚 新增核心課程'}</h3>
                 <form onSubmit={handleSaveCourse} class="space-y-3 text-[15px]">
                   <div>
                     <label class="block text-gray-700 font-bold mb-1">課程歸類</label>
-                    <select 
-                      value={newCourse.isScheduled ? 'true' : 'false'} 
-                      onChange={e => setNewCourse({...newCourse, isScheduled: e.target.value === 'true'})}
-                      class="w-full border rounded-xl p-2.5 bg-gray-50 font-bold"
-                    >
+                    <select value={newCourse.isScheduled ? 'true' : 'false'} onChange={e => setNewCourse({...newCourse, isScheduled: e.target.value === 'true'})} class="w-full border rounded-xl p-2.5 bg-gray-50 font-bold">
                       <option value="true">年度核心課程內容</option>
                       <option value="false">尚未排程課程</option>
                     </select>
                   </div>
-
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">日期（或備註時間）</label>
-                    <input 
-                      type="text" 
-                      value={newCourse.date} 
-                      onChange={e => setNewCourse({...newCourse, date: e.target.value})} 
-                      class="w-full border rounded-xl p-2.5 bg-gray-50" 
-                      placeholder="例如：2026-08-12 或 未定" 
-                      required 
-                    />
-                  </div>
-
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">講師</label>
-                    <input 
-                      type="text" 
-                      value={newCourse.instructor} 
-                      onChange={e => setNewCourse({...newCourse, instructor: e.target.value})} 
-                      class="w-full border rounded-xl p-2.5 bg-gray-50" 
-                      placeholder="例如：黃仲諄主任" 
-                    />
-                  </div>
-
-                  <div>
-                    <label class="block text-gray-700 font-bold mb-1">課程內容</label>
-                    <textarea 
-                      value={newCourse.content} 
-                      onChange={e => setNewCourse({...newCourse, content: e.target.value})} 
-                      class="w-full border rounded-xl p-2.5 bg-gray-50 h-24" 
-                      placeholder="請輸入詳細課程主題與說明" 
-                      required 
-                    ></textarea>
-                  </div>
-
-                  {newCourse.isScheduled && (
-                    <div class="flex items-center gap-2 bg-blue-50 p-3 rounded-xl border border-blue-200">
-                      <input 
-                        type="checkbox" 
-                        id="modalConfirm"
-                        checked={newCourse.isConfirmed} 
-                        onChange={e => setNewCourse({...newCourse, isConfirmed: e.target.checked})}
-                        class="w-4 h-4 accent-blue-600 cursor-pointer"
-                      />
-                      <label htmlFor="modalConfirm" class="text-blue-900 font-bold cursor-pointer">
-                        已排程（勾選後於表格中呈現粗體字）
-                      </label>
-                    </div>
-                  )}
-
-                  <div class="flex justify-end gap-3 pt-2 border-t">
-                    <button type="button" onClick={() => setShowCourseModal(false)} class="px-4 py-2 border rounded-xl font-bold">取消</button>
-                    <button type="submit" class="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">儲存變更</button>
-                  </div>
+                  <div><label class="block text-gray-700 font-bold mb-1">日期（或備註時間）</label><input type="text" value={newCourse.date} onChange={e => setNewCourse({...newCourse, date: e.target.value})} class="w-full border rounded-xl p-2.5 bg-gray-50" required /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">講師</label><input type="text" value={newCourse.instructor} onChange={e => setNewCourse({...newCourse, instructor: e.target.value})} class="w-full border rounded-xl p-2.5 bg-gray-50" /></div>
+                  <div><label class="block text-gray-700 font-bold mb-1">課程內容</label><textarea value={newCourse.content} onChange={e => setNewCourse({...newCourse, content: e.target.value})} class="w-full border rounded-xl p-2.5 bg-gray-50 h-24" required></textarea></div>
+                  <div class="flex justify-end gap-3 pt-2 border-t"><button type="button" onClick={() => setShowCourseModal(false)} class="px-4 py-2 border rounded-xl font-bold">取消</button><button type="submit" class="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl">儲存變更</button></div>
                 </form>
               </div>
             </div>
@@ -1771,7 +1526,7 @@
                 <form onSubmit={handleAddBulletin} class="space-y-3">
                   <div><label class="block text-gray-700 font-bold mb-1">標題</label><input type="text" value={newBulletin.title} onChange={e => setNewBulletin({...newBulletin, title: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" required /></div>
                   <div><label class="block text-gray-700 font-bold mb-1">內容</label><textarea value={newBulletin.content} onChange={e => setNewBulletin({...newBulletin, content: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 h-28" required></textarea></div>
-                  <div class="flex justify-end gap-3 pt-3"><button type="button" onClick={() => setShowBulletinModal(false)} class="px-5 py-2.5 border rounded-xl font-bold">取消</button><button type="submit" class="px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl">發布</button></div>
+                  <div class="flex justify-end gap-3 pt-3"><button type="button" onClick={() => setShowBulletinModal(false)} class="px-5 py-2.5 border rounded-xl font-bold">取消</button><button type="submit" class="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl">發布</button></div>
                 </form>
               </div>
             </div>

@@ -80,8 +80,8 @@
       const [isApproved, setIsApproved] = useState(false);
       const [loading, setLoading] = useState(true);
 
-      const [currentTab, setCurrentTab] = useState('calendar');
-      const [calendarViewMode, setCalendarViewMode] = useState('list'); // 📌 'list': 縱向模式, 'month': 月視圖模式
+      const [currentTab, setCurrentTab] = useState('personnel');
+      const [calendarViewMode, setCalendarViewMode] = useState('month'); // 'list': 縱向模式, 'month': 月視圖模式
 
       const [currentYear, setCurrentYear] = useState(todayObj.getFullYear());
       const [currentMonth, setCurrentMonth] = useState(todayObj.getMonth() + 1);
@@ -181,6 +181,26 @@
           return note.replace('報告醫師：', '');
         }
         return '';
+      };
+
+      // 解析住院醫師的 note 格式
+      const parseResidentNote = (note) => {
+        if (!note) return { dept: '未指定', supervisor: '無' };
+        const parts = note.split('｜負責主治：');
+        return {
+          dept: parts[0] || '未指定',
+          supervisor: parts[1] || '無'
+        };
+      };
+
+      // 解析實習醫師的 note 格式
+      const parseInternNote = (note) => {
+        if (!note) return { group: 'A', dept: '內一' };
+        const parts = note.split('組 - ');
+        if (parts.length === 2) {
+          return { group: parts[0], dept: parts[1] };
+        }
+        return { group: 'A', dept: note };
       };
 
       useEffect(() => {
@@ -630,6 +650,7 @@
         }
       };
 
+      // 🩺 儲存醫師陣容資料
       const handleSavePersonnel = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！');
@@ -658,6 +679,8 @@
           if (!error && data) {
             setPersonnelList(personnelList.map(p => p.id === newPerson.editId ? data[0] : p));
             alert('醫師資料已更新！');
+          } else if (error) {
+            alert('更新失敗：' + error.message);
           }
         } else {
           const { data, error } = await supabase
@@ -668,6 +691,8 @@
           if (!error && data) {
             setPersonnelList([...personnelList, data[0]]);
             alert('成功新增醫師！');
+          } else if (error) {
+            alert('新增失敗：' + error.message);
           }
         }
 
@@ -683,13 +708,13 @@
         let rotationDept = '內一';
 
         if (p.category === 'residents' && p.note) {
-          const parts = p.note.split('｜負責主治：');
-          deptName = parts[0] || '內一';
-          supervisorDoctor = parts[1] || '';
+          const resObj = parseResidentNote(p.note);
+          deptName = resObj.dept;
+          supervisorDoctor = resObj.supervisor;
         } else if (p.category === 'interns' && p.note) {
-          const parts = p.note.split('組 - ');
-          groupCode = parts[0] || 'A';
-          rotationDept = parts[1] || '內一';
+          const intObj = parseInternNote(p.note);
+          groupCode = intObj.group;
+          rotationDept = intObj.dept;
         }
 
         setNewPerson({
@@ -924,7 +949,7 @@
             </div>
           )}
 
-          {/* 2. 綜合行事曆 (📌 需求：切換縱向列表與月視圖滑動模式) */}
+          {/* 2. 綜合行事曆 */}
           {currentTab === 'calendar' && (
             <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-4 md:space-y-6">
               <div class="flex flex-wrap justify-between items-center gap-3">
@@ -935,7 +960,6 @@
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2 no-print">
-                  {/* 📌 觀看模式切換鈕 */}
                   <div class="bg-gray-100 p-1 rounded-xl flex border gap-1 text-[14px] md:text-[16px] font-bold">
                     <button 
                       onClick={() => setCalendarViewMode('list')} 
@@ -960,7 +984,7 @@
                 </div>
               </div>
 
-              {/* 📱 模式 1：縱向觀看模式（呈現完整會議內容，如跟診表單日卡片） */}
+              {/* 📱 模式 1：縱向觀看模式 */}
               {calendarViewMode === 'list' && (
                 <div class="space-y-3">
                   {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -1010,7 +1034,7 @@
                 </div>
               )}
 
-              {/* 📅 模式 2：月觀看模式（橫軸滑動拉伸，僅呈現標題、時間、主持人） */}
+              {/* 📅 模式 2：月觀看模式 */}
               {calendarViewMode === 'month' && (
                 <div class="overflow-x-auto no-scrollbar rounded-xl border border-gray-200">
                   <div class="min-w-[750px] grid grid-cols-7 text-[11px] md:text-[18px] print-table">
@@ -1026,18 +1050,25 @@
                       return (
                         <div key={day} class="p-1.5 min-h-[110px] border-b border-r space-y-1.5 hover:bg-blue-50/20 transition print-cell">
                           <div class="font-bold text-gray-900 border-b pb-0.5">{day}日</div>
-                          {dayEvents.map(ev => (
-                            <div 
-                              key={ev.id} 
-                              onClick={() => setSelectedEvent(ev)} 
-                              class="p-1.5 rounded-lg font-bold cursor-pointer hover:opacity-90 shadow-sm space-y-0.5 text-[11px] md:text-[13px] leading-snug print-event-card border border-gray-300/80" 
-                              style={getEventCardStyle(ev)}
-                            >
-                              <div class="text-[12px] md:text-[14px] border-b border-gray-400/40 pb-0.5 font-extrabold text-gray-900">{ev.title}</div>
-                              <div class="text-gray-900">時間：{ev.time}</div>
-                              {ev.instructor && <div class="text-gray-800">主持：{ev.instructor}</div>}
-                            </div>
-                          ))}
+                          {dayEvents.map(ev => {
+                            const presenterName = parsePresenter(ev.note);
+                            return (
+                              <div 
+                                key={ev.id} 
+                                onClick={() => setSelectedEvent(ev)} 
+                                class="p-1.5 rounded-lg font-bold cursor-pointer hover:opacity-90 shadow-sm space-y-0.5 text-[11px] md:text-[13px] leading-snug print-event-card border border-gray-300/80" 
+                                style={getEventCardStyle(ev)}
+                              >
+                                <div class="text-[12px] md:text-[14px] border-b border-gray-400/40 pb-0.5 font-extrabold text-gray-900">{ev.title}</div>
+                                <div class="text-gray-900">時間：{ev.time}</div>
+                                {ev.location && <div class="text-gray-800">地點：{ev.location}</div>}
+                                {ev.instructor && <div class="text-gray-800">主持：{ev.instructor}</div>}
+                                {presenterName && <div class="text-gray-800">報告：{presenterName}</div>}
+                                {ev.participants && <div class="text-gray-800">與會：{ev.participants}</div>}
+                                {ev.recorder && <div class="text-gray-800">紀錄：{ev.recorder}</div>}
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     })}
@@ -1155,14 +1186,14 @@
             </div>
           )}
 
-          {/* 4. 中醫部醫師陣容 */}
+          {/* 4. 中醫部醫師陣容 (📌 需求：點擊即可編輯、專屬欄位排版) */}
           {currentTab === 'personnel' && (
             <div class="bg-white p-5 md:p-8 rounded-2xl border shadow-sm space-y-6">
               <div class="flex justify-between items-center border-b pb-4">
                 <div>
                   <h2 class="text-[22px] md:text-[28px] font-bold text-gray-900">中醫部醫師陣容與幹部</h2>
                   <p class="text-[14px] md:text-[18px] text-gray-500 mt-1">
-                    {isApproved ? '點擊任何一位醫師的卡片即可進行編輯與修改' : '當月部總、科總、住院醫師、外訓與實習醫師資訊'}
+                    {isApproved ? '💡 點擊任何一位醫師卡片即可直接進行編輯與內容更動' : '當月部總、科總、住院醫師、外訓與實習醫師資訊'}
                   </p>
                 </div>
                 {isApproved && (
@@ -1178,76 +1209,127 @@
                 )}
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="p-5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-3 shadow-sm">
-                  <h3 class="font-bold text-[20px] md:text-[24px] text-blue-900 border-b border-blue-200 pb-2">當月部總醫師</h3>
-                  <div class="space-y-2">
-                    {personnelList.filter(p => p.category === 'chiefDepartment').map(p => (
-                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-blue-500 hover:shadow-md cursor-pointer' : ''}`}>
-                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '總醫師'})</span></div>
-                        {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
-                      </div>
-                    ))}
+              <div class="space-y-6">
+                {/* 1. 當月部總醫師 & 當月科總醫師 (雙欄併排) */}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* 部總 */}
+                  <div class="p-5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-3 shadow-sm">
+                    <h3 class="font-bold text-[20px] md:text-[24px] text-blue-900 border-b border-blue-200 pb-2">當月部總醫師</h3>
+                    <div class="space-y-2">
+                      {personnelList.filter(p => p.category === 'chiefDepartment').map(p => (
+                        <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-blue-500 hover:shadow-md cursor-pointer' : ''}`}>
+                          <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '總醫師'})</span></div>
+                          {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 科總 */}
+                  <div class="p-5 rounded-2xl bg-indigo-50/80 border border-indigo-200 space-y-3 shadow-sm">
+                    <h3 class="font-bold text-[20px] md:text-[24px] text-indigo-900 border-b border-indigo-200 pb-2">當月科總醫師</h3>
+                    <div class="space-y-2">
+                      {personnelList.filter(p => p.category === 'chiefSections').map(p => (
+                        <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-indigo-500 hover:shadow-md cursor-pointer' : ''}`}>
+                          <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '科總'})</span></div>
+                          {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                <div class="p-5 rounded-2xl bg-indigo-50/80 border border-indigo-200 space-y-3 shadow-sm">
-                  <h3 class="font-bold text-[20px] md:text-[24px] text-indigo-900 border-b border-indigo-200 pb-2">當月科總醫師</h3>
-                  <div class="space-y-2">
-                    {personnelList.filter(p => p.category === 'chiefSections').map(p => (
-                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-indigo-500 hover:shadow-md cursor-pointer' : ''}`}>
-                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '科總'})</span></div>
-                        {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
-                      </div>
-                    ))}
+                {/* 2. 專科輪訓醫師 & 外訓醫師 (雙欄併排) */}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* 專科輪訓 */}
+                  <div class="p-5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-3 shadow-sm">
+                    <h3 class="font-bold text-[20px] md:text-[24px] text-amber-900 border-b border-amber-200 pb-2">專科輪訓醫師</h3>
+                    <div class="space-y-2">
+                      {personnelList.filter(p => p.category === 'specialtyTrainings').map(p => (
+                        <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-amber-500 hover:shadow-md cursor-pointer' : ''}`}>
+                          <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '輪訓'})</span></div>
+                          {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 外訓醫師 */}
+                  <div class="p-5 rounded-2xl bg-purple-50/80 border border-purple-200 space-y-3 shadow-sm">
+                    <h3 class="font-bold text-[20px] md:text-[24px] text-purple-900 border-b border-purple-200 pb-2">外訓醫師</h3>
+                    <div class="space-y-2">
+                      {personnelList.filter(p => p.category === 'externalTrainings').map(p => (
+                        <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-purple-500 hover:shadow-md cursor-pointer' : ''}`}>
+                          <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '外訓'})</span></div>
+                          {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                <div class="col-span-1 md:col-span-2 p-5 md:p-6 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-4 shadow-sm">
+                {/* 3. 各科住院醫師 (獨佔大列，包含：姓名、科別標籤、負責主治) */}
+                <div class="p-5 md:p-6 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-4 shadow-sm">
                   <h3 class="font-bold text-[22px] md:text-[26px] text-emerald-900 border-b border-emerald-200 pb-2">各科住院醫師</h3>
-                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {personnelList.filter(p => p.category === 'residents').map(p => (
-                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-4 rounded-xl border bg-white space-y-1.5 transition ${isApproved ? 'hover:border-emerald-500 hover:shadow-md cursor-pointer' : ''}`}>
-                        <div class="flex justify-between items-center"><span class="font-bold text-[20px] text-emerald-950">{p.name}</span>{isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1">刪除</button>}</div>
-                        <div class="text-[15px] text-gray-600 bg-emerald-50/50 p-2 rounded-lg border border-emerald-100">{p.note || '未指定'}</div>
-                      </div>
-                    ))}
+                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {personnelList.filter(p => p.category === 'residents').map(p => {
+                      const resData = parseResidentNote(p.note);
+                      return (
+                        <div 
+                          key={p.id} 
+                          onClick={() => openEditPersonnelModal(p)} 
+                          class={`p-4 rounded-xl border bg-white space-y-2.5 transition shadow-sm ${isApproved ? 'hover:border-emerald-500 hover:shadow-md cursor-pointer' : ''}`}
+                        >
+                          <div class="flex justify-between items-center border-b pb-2">
+                            <div class="flex items-center gap-2">
+                              <span class="font-extrabold text-[20px] text-gray-900">{p.name}</span>
+                              <span class="text-[13px] bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-2 py-0.5 rounded-full">
+                                {resData.dept}
+                              </span>
+                            </div>
+                            {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
+                          </div>
+                          
+                          <div class="text-[16px] md:text-[18px] font-bold text-amber-900 bg-amber-50 p-2.5 rounded-lg border border-amber-200 flex items-center justify-between">
+                            <span class="text-gray-600 text-[14px]">負責主治醫師：</span>
+                            <span class="text-amber-800 font-extrabold">{resData.supervisor}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <div class="p-5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-3 shadow-sm">
-                  <h3 class="font-bold text-[20px] md:text-[24px] text-amber-900 border-b border-amber-200 pb-2">專科輪訓醫師</h3>
-                  <div class="space-y-2">
-                    {personnelList.filter(p => p.category === 'specialtyTrainings').map(p => (
-                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-amber-500 hover:shadow-md cursor-pointer' : ''}`}>
-                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '輪訓'})</span></div>
-                        {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div class="p-5 rounded-2xl bg-purple-50/80 border border-purple-200 space-y-3 shadow-sm">
-                  <h3 class="font-bold text-[20px] md:text-[24px] text-purple-900 border-b border-purple-200 pb-2">外訓醫師</h3>
-                  <div class="space-y-2">
-                    {personnelList.filter(p => p.category === 'externalTrainings').map(p => (
-                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-3.5 rounded-xl border bg-white flex justify-between items-center transition ${isApproved ? 'hover:border-purple-500 hover:shadow-md cursor-pointer' : ''}`}>
-                        <div class="font-bold text-[18px] md:text-[20px] text-gray-800">{p.name} <span class="text-[15px] font-normal text-gray-500">({p.note || '外訓'})</span></div>
-                        {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div class="col-span-1 md:col-span-2 p-5 md:p-6 rounded-2xl bg-teal-50/80 border border-teal-200 space-y-4 shadow-sm">
+                {/* 4. 輪訓實習醫師 (獨佔大列，包含：姓名、組別 A-H、輪訓科別) */}
+                <div class="p-5 md:p-6 rounded-2xl bg-teal-50/80 border border-teal-200 space-y-4 shadow-sm">
                   <h3 class="font-bold text-[22px] md:text-[26px] text-teal-900 border-b border-teal-200 pb-2">輪訓實習醫師</h3>
-                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {personnelList.filter(p => p.category === 'interns').map(p => (
-                      <div key={p.id} onClick={() => openEditPersonnelModal(p)} class={`p-4 rounded-xl border bg-white space-y-2 transition ${isApproved ? 'hover:border-teal-500 hover:shadow-md cursor-pointer' : ''}`}>
-                        <div class="flex justify-between items-center"><span class="font-bold text-[20px] text-teal-950">{p.name}</span>{isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1">刪除</button>}</div>
-                        <div class="text-[15px] font-bold text-teal-800 bg-teal-50 p-2 rounded-lg border border-teal-100">所屬：{p.note || '未指定'}</div>
-                      </div>
-                    ))}
+                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {personnelList.filter(p => p.category === 'interns').map(p => {
+                      const intData = parseInternNote(p.note);
+                      return (
+                        <div 
+                          key={p.id} 
+                          onClick={() => openEditPersonnelModal(p)} 
+                          class={`p-4 rounded-xl border bg-white space-y-2 transition shadow-sm ${isApproved ? 'hover:border-teal-500 hover:shadow-md cursor-pointer' : ''}`}
+                        >
+                          <div class="flex justify-between items-center border-b pb-2">
+                            <span class="font-extrabold text-[20px] text-gray-900">{p.name}</span>
+                            {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
+                          </div>
+                          
+                          <div class="grid grid-cols-2 gap-2 text-[15px] font-bold">
+                            <div class="bg-blue-50 text-blue-900 p-2 rounded-lg border border-blue-200 text-center">
+                              <span class="text-gray-500 text-[12px] block font-normal">所屬組別</span>
+                              {intData.group} 組
+                            </div>
+                            <div class="bg-teal-50 text-teal-900 p-2 rounded-lg border border-teal-200 text-center">
+                              <span class="text-gray-500 text-[12px] block font-normal">輪訓科別</span>
+                              {intData.dept}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -1571,7 +1653,7 @@
             </div>
           )}
 
-          {/* Modal：新增/修改 醫師 */}
+          {/* Modal：新增/修改 醫師 (📌 依類別動態呈現輸入欄位) */}
           {showPersonnelModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
@@ -1588,10 +1670,65 @@
                       <option value="interns">輪訓實習醫師</option>
                     </select>
                   </div>
+
                   <div>
                     <label class="block text-gray-700 font-bold mb-1">醫師姓名</label>
-                    <input type="text" value={newPerson.name} onChange={e => setNewPerson({...newPerson, name: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required />
+                    <input type="text" value={newPerson.name} onChange={e => setNewPerson({...newPerson, name: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required placeholder="如：張小明醫師" />
                   </div>
+
+                  {/* 邏輯 1：住院醫師專屬欄位 */}
+                  {newPerson.category === 'residents' && (
+                    <div class="space-y-3 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200">
+                      <div>
+                        <label class="block text-emerald-950 font-bold mb-1">所屬科別 (標籤)</label>
+                        <select value={newPerson.deptName} onChange={e => setNewPerson({...newPerson, deptName: e.target.value})} class="w-full border rounded-xl p-2.5 bg-white font-bold">
+                          <option value="內一">內一</option>
+                          <option value="內二">內二</option>
+                          <option value="婦兒科">婦兒科</option>
+                          <option value="針灸科">針灸科</option>
+                          <option value="傷科">傷科</option>
+                          <option value="家醫科">家醫科</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-emerald-950 font-bold mb-1">負責的主治醫師</label>
+                        <input type="text" value={newPerson.supervisorDoctor} onChange={e => setNewPerson({...newPerson, supervisorDoctor: e.target.value})} class="w-full border rounded-xl p-2.5 bg-white font-bold" placeholder="如：黃仲諄主任" required />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 邏輯 2：實習醫師專屬欄位 */}
+                  {newPerson.category === 'interns' && (
+                    <div class="space-y-3 bg-teal-50/60 p-4 rounded-2xl border border-teal-200">
+                      <div>
+                        <label class="block text-teal-950 font-bold mb-1">所屬組別 (A - H)</label>
+                        <select value={newPerson.groupCode} onChange={e => setNewPerson({...newPerson, groupCode: e.target.value})} class="w-full border rounded-xl p-2.5 bg-white font-bold">
+                          {['A','B','C','D','E','F','G','H'].map(g => (
+                            <option key={g} value={g}>{g} 組</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-teal-950 font-bold mb-1">跑的科別</label>
+                        <select value={newPerson.rotationDept} onChange={e => setNewPerson({...newPerson, rotationDept: e.target.value})} class="w-full border rounded-xl p-2.5 bg-white font-bold">
+                          <option value="內一">內一</option>
+                          <option value="內二">內二</option>
+                          <option value="婦兒科">婦兒科</option>
+                          <option value="針灸科">針灸科</option>
+                          <option value="傷科">傷科</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 一般備註 (針對總醫師/外訓等) */}
+                  {newPerson.category !== 'residents' && newPerson.category !== 'interns' && (
+                    <div>
+                      <label class="block text-gray-700 font-bold mb-1">備註說明 (可選)</label>
+                      <input type="text" value={newPerson.note} onChange={e => setNewPerson({...newPerson, note: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：5266 分機 或 外訓科別" />
+                    </div>
+                  )}
+
                   <div class="flex justify-end gap-3 pt-3">
                     <button type="button" onClick={() => setShowPersonnelModal(false)} class="px-5 py-2.5 border rounded-xl font-bold">取消</button>
                     <button type="submit" class="px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl">儲存變更</button>

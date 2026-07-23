@@ -157,15 +157,13 @@
         return 'bg-blue-50/90 border-blue-200 text-blue-900 hover:border-blue-400';
       };
 
-      // 🎨 低彩度柔和馬卡龍色系設定
       const getColorHex = (colorName) => {
-        if (colorName === '紅色') return '#FEE2E2'; // 柔粉紅
-        if (colorName === '黃色') return '#FEF3C7'; // 柔鵝黃
-        if (colorName === '綠色') return '#D1FAE5'; // 柔薄荷綠
+        if (colorName === '紅色') return '#FEE2E2'; 
+        if (colorName === '黃色') return '#FEF3C7'; 
+        if (colorName === '綠色') return '#D1FAE5'; 
         return '#FEE2E2';
       };
 
-      // 🎨 動態計算事件卡片樣式（自動將鮮豔舊色轉為柔和色，文字設為黑色）
       const getEventCardStyle = (ev) => {
         let bg = ev.color;
         if (ev.color === '#EF4444' || ev.level === '紅色') bg = '#FEE2E2';
@@ -411,6 +409,7 @@
         setNewRoster({ ...newRoster, selectedSlots: slots });
       };
 
+      // 🩺 儲存跟診門診 (具備 Supabase 欄位缺失保護)
       const handleSaveRoster = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
@@ -418,17 +417,31 @@
         const studentsArr = newRoster.studentName ? newRoster.studentName.split(/[,、\s]+/).map(s => s.trim()).filter(Boolean) : [];
 
         if (newRoster.editId) {
-          const { data, error } = await supabase
+          const updatePayload = {
+            doctor: newRoster.doctor, 
+            shift: newRoster.shift, 
+            students: studentsArr,
+            is_teaching: newRoster.isTeaching,
+            day: parseInt(newRoster.day)
+          };
+
+          let { data, error } = await supabase
             .from('roster_shifts')
-            .update({ 
-              doctor: newRoster.doctor, 
-              shift: newRoster.shift, 
-              students: studentsArr,
-              is_teaching: newRoster.isTeaching,
-              day: parseInt(newRoster.day)
-            })
+            .update(updatePayload)
             .eq('id', newRoster.editId)
             .select();
+
+          // 🛡️ 防護備案：若 Supabase 還沒開通 is_teaching 欄位，自動降級剔除該欄位再試一次
+          if (error && error.message.includes('is_teaching')) {
+            delete updatePayload.is_teaching;
+            const fallback = await supabase
+              .from('roster_shifts')
+              .update(updatePayload)
+              .eq('id', newRoster.editId)
+              .select();
+            data = fallback.data;
+            error = fallback.error;
+          }
 
           if (error) {
             alert('更新單診失敗：' + error.message);
@@ -467,7 +480,16 @@
             });
           }
 
-          const { data, error } = await supabase.from('roster_shifts').insert(batchShifts).select();
+          let { data, error } = await supabase.from('roster_shifts').insert(batchShifts).select();
+
+          // 🛡️ 防護備案
+          if (error && error.message.includes('is_teaching')) {
+            const cleanBatch = batchShifts.map(b => { const clone = {...b}; delete clone.is_teaching; return clone; });
+            const fallback = await supabase.from('roster_shifts').insert(cleanBatch).select();
+            data = fallback.data;
+            error = fallback.error;
+          }
+
           if (error) {
             alert('批次新增診次失敗：' + error.message);
           } else if (data) {
@@ -490,7 +512,15 @@
             weekly_day: new Date(currentYear, currentMonth - 1, parseInt(newRoster.day)).getDay()
           };
 
-          const { data, error } = await supabase.from('roster_shifts').insert([item]).select();
+          let { data, error } = await supabase.from('roster_shifts').insert([item]).select();
+
+          if (error && error.message.includes('is_teaching')) {
+            delete item.is_teaching;
+            const fallback = await supabase.from('roster_shifts').insert([item]).select();
+            data = fallback.data;
+            error = fallback.error;
+          }
+
           if (!error && data) {
             setRosterShifts([...rosterShifts, data[0]]);
             alert('已成功新增單日門診！');
@@ -538,6 +568,7 @@
         setRosterShifts(rosterShifts.map(s => s.id === shift.id ? { ...s, students: updatedStudents } : s));
       };
 
+      // 🗑️ 單獨與批次刪除門診
       const handleDeleteRoster = async (e, shift, day) => {
         e.stopPropagation();
         if (!isApproved) return alert('權限不足！');
@@ -578,7 +609,7 @@
                 s.year === currentYear && ((s.month === currentMonth && s.day >= day) || s.month > currentMonth)
               )));
             }
-            alert(`已批次刪除門診！`);
+            alert(`已成功批次刪除門診！`);
           }
         }
       };
@@ -894,7 +925,7 @@
             </div>
           )}
 
-          {/* 2. 綜合行事曆 (📌 需求 1：柔和馬卡龍色調與黑色字體) */}
+          {/* 2. 綜合行事曆 */}
           {currentTab === 'calendar' && (
             <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-4 md:space-y-6">
               <div class="flex flex-wrap justify-between items-center gap-3">
@@ -963,7 +994,7 @@
             </div>
           )}
 
-          {/* 3. 跟診表 (📌 需求 2：若無跟診學員呈現空白，不顯示待認領) */}
+          {/* 3. 跟診表 (📌 補回卡片右上角垃圾桶刪除按鈕) */}
           {currentTab === 'roster' && (
             <div class="space-y-4 md:space-y-6">
               <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-3">
@@ -985,6 +1016,7 @@
                 </div>
               </div>
 
+              {/* 電腦版 7 欄跟診月曆 */}
               <div class="hidden md:grid grid-cols-7 border-t border-l text-[20px] bg-white rounded-2xl overflow-hidden border">
                 {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map(d => (
                   <div key={d} class="p-3 text-center font-bold border-b border-r bg-gray-50 text-gray-800">{d}</div>
@@ -1001,14 +1033,25 @@
                     <div key={day} onClick={() => { if (isApproved) { setNewRoster({ editId: null, day: day, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isTeaching: false, isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); } }} class="p-2 min-h-[150px] border-b border-r space-y-2 hover:bg-blue-50/30 cursor-pointer">
                       <div class="font-bold text-gray-800">{day}日</div>
                       {allDayShifts.map(shift => (
-                        <div key={shift.id} onClick={(e) => handleCardClick(e, shift, day)} class={`border p-2 rounded-xl text-[16px] transition space-y-1 relative ${getShiftStyle(shift.shift, shift.is_teaching)}`}>
+                        <div key={shift.id} onClick={(e) => handleCardClick(e, shift, day)} class={`border p-2 rounded-xl text-[16px] transition space-y-1 relative group ${getShiftStyle(shift.shift, shift.is_teaching)}`}>
                           <div class="flex justify-between items-center font-bold">
-                            <span>{shift.doctor} ({shift.shift})</span>
-                            {shift.is_teaching && (
-                              <span class="text-[11px] bg-pink-600 text-white px-1.5 py-0.5 rounded font-bold">教學診</span>
+                            <span class="flex items-center gap-1">
+                              {shift.doctor} ({shift.shift})
+                              {shift.is_teaching && (
+                                <span class="text-[11px] bg-pink-600 text-white px-1.5 py-0.5 rounded font-bold">教學診</span>
+                              )}
+                            </span>
+                            {/* 📌 電腦版垃圾桶刪除鈕 */}
+                            {isApproved && (
+                              <button 
+                                onClick={(e) => handleDeleteRoster(e, shift, day)} 
+                                class="text-red-500 hover:text-red-700 font-bold text-[14px] p-0.5 rounded hover:bg-red-100/50 transition"
+                                title="刪除單診或批次刪除"
+                              >
+                                🗑️
+                              </button>
                             )}
                           </div>
-                          {/* 📌 需求 2：無學員時留空，不填寫待認領 */}
                           <div class="text-[14px]">跟診學員：{shift.students?.length ? shift.students.join('、') : ''}</div>
                         </div>
                       ))}
@@ -1017,6 +1060,7 @@
                 })}
               </div>
 
+              {/* 手機版跟診表 */}
               <div class="md:hidden space-y-3">
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
@@ -1038,7 +1082,6 @@
                               </div>
                               {isApproved && <button onClick={(e) => handleDeleteRoster(e, shift, day)} class="text-red-500 font-bold p-1">🗑️</button>}
                             </div>
-                            {/* 📌 需求 2：手機版無學員時同樣留空 */}
                             <div class="text-[15px] opacity-90 mt-1 font-medium">跟診學員：{shift.students?.length ? shift.students.join('、') : ''}</div>
                           </div>
                         ))}

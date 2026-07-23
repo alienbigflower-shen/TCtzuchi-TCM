@@ -30,6 +30,7 @@
       .print-table {
         border-collapse: collapse !important;
         width: 100% !important;
+        min-width: 100% !important;
       }
       .print-cell {
         border: 1px solid #d1d5db !important;
@@ -80,6 +81,8 @@
       const [loading, setLoading] = useState(true);
 
       const [currentTab, setCurrentTab] = useState('calendar');
+      const [calendarViewMode, setCalendarViewMode] = useState('list'); // 📌 'list': 縱向模式, 'month': 月視圖模式
+
       const [currentYear, setCurrentYear] = useState(todayObj.getFullYear());
       const [currentMonth, setCurrentMonth] = useState(todayObj.getMonth() + 1);
       const [selectedDept, setSelectedDept] = useState('內一');
@@ -921,7 +924,7 @@
             </div>
           )}
 
-          {/* 2. 綜合行事曆 */}
+          {/* 2. 綜合行事曆 (📌 需求：切換縱向列表與月視圖滑動模式) */}
           {currentTab === 'calendar' && (
             <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-4 md:space-y-6">
               <div class="flex flex-wrap justify-between items-center gap-3">
@@ -930,53 +933,117 @@
                   <h2 class="text-[18px] md:text-[26px] font-bold text-gray-900">{currentYear} 年 {currentMonth} 月 綜合行事曆</h2>
                   <button onClick={handleNextMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold no-print">下個月 ▶</button>
                 </div>
-                <div class="flex gap-2 no-print">
+
+                <div class="flex flex-wrap items-center gap-2 no-print">
+                  {/* 📌 觀看模式切換鈕 */}
+                  <div class="bg-gray-100 p-1 rounded-xl flex border gap-1 text-[14px] md:text-[16px] font-bold">
+                    <button 
+                      onClick={() => setCalendarViewMode('list')} 
+                      class={`px-3 py-1.5 rounded-lg transition ${calendarViewMode === 'list' ? 'bg-blue-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      📋 縱向列表
+                    </button>
+                    <button 
+                      onClick={() => setCalendarViewMode('month')} 
+                      class={`px-3 py-1.5 rounded-lg transition ${calendarViewMode === 'month' ? 'bg-blue-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      📅 月視圖 (可橫滑)
+                    </button>
+                  </div>
+
                   {isApproved && (
-                    <button onClick={() => { setNewEvent({ editId: null, title: '', participants: '', day: focusD, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', presenter: '', recorder: '', color: '紅色', isRecurring: false, weeklyDay: 1 }); setShowEventModal(true); }} class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold hover:bg-blue-700">+ 排定事件</button>
+                    <button onClick={() => { setNewEvent({ editId: null, title: '', participants: '', day: focusD, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', presenter: '', recorder: '', color: '紅色', isRecurring: false, weeklyDay: 1 }); setShowEventModal(true); }} class="bg-blue-600 text-white px-3 md:px-4 py-2 rounded-xl text-[14px] md:text-[20px] font-bold hover:bg-blue-700">+ 排定事件</button>
                   )}
-                  <button onClick={() => window.print()} class="border border-gray-300 px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold hover:bg-gray-100 flex items-center gap-1.5">
-                    🖨️ 列印全月行事曆
+                  <button onClick={() => window.print()} class="border border-gray-300 px-3 md:px-4 py-2 rounded-xl text-[14px] md:text-[20px] font-bold hover:bg-gray-100 flex items-center gap-1.5">
+                    🖨️ 列印全月
                   </button>
                 </div>
               </div>
 
-              {/* 🖨️ 7 欄行事曆 */}
-              <div class="grid grid-cols-7 border-t border-l text-[11px] md:text-[18px] print-table">
-                {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map((d, i) => (
-                  <div key={d} class={`p-1.5 md:p-3 text-center font-bold border-b border-r bg-gray-50 ${i === 0 || i === 6 ? 'text-red-500' : 'text-gray-800'}`}>{d}</div>
-                ))}
-                {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-                  <div key={'empty-' + i} class="p-1 min-h-[110px] border-b border-r bg-gray-50/20 print-cell"></div>
-                ))}
-                {Array.from({ length: daysInMonth }).map((_, i) => {
-                  const day = i + 1;
-                  const dayEvents = events.filter(e => e.year === currentYear && e.month === currentMonth && e.day === day);
-                  return (
-                    <div key={day} class="p-1.5 md:p-2.5 min-h-[110px] border-b border-r space-y-1.5 hover:bg-blue-50/20 transition print-cell">
-                      <div class="font-bold text-gray-900 border-b pb-0.5">{day}日</div>
-                      {dayEvents.map(ev => {
-                        const presenterName = parsePresenter(ev.note);
-                        return (
-                          <div 
-                            key={ev.id} 
-                            onClick={() => setSelectedEvent(ev)} 
-                            class="p-2 rounded-lg font-bold cursor-pointer hover:opacity-90 shadow-sm space-y-0.5 text-[11px] md:text-[13px] leading-snug print-event-card border border-gray-300/80" 
-                            style={getEventCardStyle(ev)}
-                          >
-                            <div class="text-[12px] md:text-[14px] border-b border-gray-400/40 pb-0.5 font-extrabold text-gray-900">{ev.title}</div>
-                            <div class="text-gray-900">時間：{ev.time}</div>
-                            {ev.location && <div class="text-gray-800">地點：{ev.location}</div>}
-                            {ev.instructor && <div class="text-gray-800">主持：{ev.instructor}</div>}
-                            {presenterName && <div class="text-gray-800">報告：{presenterName}</div>}
-                            {ev.participants && <div class="text-gray-800">與會：{ev.participants}</div>}
-                            {ev.recorder && <div class="text-gray-800">紀錄：{ev.recorder}</div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
+              {/* 📱 模式 1：縱向觀看模式（呈現完整會議內容，如跟診表單日卡片） */}
+              {calendarViewMode === 'list' && (
+                <div class="space-y-3">
+                  {Array.from({ length: daysInMonth }).map((_, i) => {
+                    const day = i + 1;
+                    const dayEvents = events.filter(e => e.year === currentYear && e.month === currentMonth && e.day === day);
+                    if (dayEvents.length === 0) return null;
+
+                    const dayOfWeekStr = ['日','一','二','三','四','五','六'][new Date(currentYear, currentMonth - 1, day).getDay()];
+
+                    return (
+                      <div key={day} class="bg-gray-50/80 p-3.5 md:p-5 rounded-2xl border space-y-3">
+                        <div class="font-bold text-gray-900 text-[16px] md:text-[20px] border-b pb-1.5 flex items-center gap-2">
+                          <span class="w-3 h-3 rounded-full bg-blue-600"></span>
+                          <span>{currentMonth}月{day}日（週{dayOfWeekStr}）</span>
+                        </div>
+                        <div class="space-y-3">
+                          {dayEvents.map(ev => {
+                            const presenterName = parsePresenter(ev.note);
+                            return (
+                              <div 
+                                key={ev.id} 
+                                onClick={() => setSelectedEvent(ev)} 
+                                class="p-3.5 md:p-5 rounded-xl font-bold cursor-pointer hover:opacity-90 shadow-sm border space-y-1.5 transition" 
+                                style={getEventCardStyle(ev)}
+                              >
+                                <div class="text-[17px] md:text-[22px] border-b border-gray-400/40 pb-1 text-gray-900 font-extrabold flex justify-between items-center">
+                                  <span>{ev.title}</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-1 text-[14px] md:text-[18px] text-gray-800 font-medium pt-1">
+                                  <div>時間：<span class="font-bold text-gray-900">{ev.time}</span></div>
+                                  <div>地點：<span class="font-bold text-gray-900">{ev.location || '無'}</span></div>
+                                  <div>主持醫師：<span class="font-bold text-gray-900">{ev.instructor || '無'}</span></div>
+                                  <div>報告醫師：<span class="font-bold text-gray-900">{presenterName || '無'}</span></div>
+                                  <div>與會人員：<span class="font-bold text-gray-900">{ev.participants || '無'}</span></div>
+                                  <div>紀錄：<span class="font-bold text-gray-900">{ev.recorder || '無'}</span></div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {events.filter(e => e.year === currentYear && e.month === currentMonth).length === 0 && (
+                    <div class="text-[16px] text-gray-400 py-10 text-center">本月尚無排定會議事件</div>
+                  )}
+                </div>
+              )}
+
+              {/* 📅 模式 2：月觀看模式（橫軸滑動拉伸，僅呈現標題、時間、主持人） */}
+              {calendarViewMode === 'month' && (
+                <div class="overflow-x-auto no-scrollbar rounded-xl border border-gray-200">
+                  <div class="min-w-[750px] grid grid-cols-7 text-[11px] md:text-[18px] print-table">
+                    {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map((d, i) => (
+                      <div key={d} class={`p-2 text-center font-bold border-b border-r bg-gray-50 ${i === 0 || i === 6 ? 'text-red-500' : 'text-gray-800'}`}>{d}</div>
+                    ))}
+                    {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+                      <div key={'empty-' + i} class="p-1 min-h-[110px] border-b border-r bg-gray-50/20 print-cell"></div>
+                    ))}
+                    {Array.from({ length: daysInMonth }).map((_, i) => {
+                      const day = i + 1;
+                      const dayEvents = events.filter(e => e.year === currentYear && e.month === currentMonth && e.day === day);
+                      return (
+                        <div key={day} class="p-1.5 min-h-[110px] border-b border-r space-y-1.5 hover:bg-blue-50/20 transition print-cell">
+                          <div class="font-bold text-gray-900 border-b pb-0.5">{day}日</div>
+                          {dayEvents.map(ev => (
+                            <div 
+                              key={ev.id} 
+                              onClick={() => setSelectedEvent(ev)} 
+                              class="p-1.5 rounded-lg font-bold cursor-pointer hover:opacity-90 shadow-sm space-y-0.5 text-[11px] md:text-[13px] leading-snug print-event-card border border-gray-300/80" 
+                              style={getEventCardStyle(ev)}
+                            >
+                              <div class="text-[12px] md:text-[14px] border-b border-gray-400/40 pb-0.5 font-extrabold text-gray-900">{ev.title}</div>
+                              <div class="text-gray-900">時間：{ev.time}</div>
+                              {ev.instructor && <div class="text-gray-800">主持：{ev.instructor}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* 說明對照框 */}
               <div class="bg-gray-50 p-3 md:p-5 rounded-2xl border border-gray-300 text-[13px] md:text-[18px] text-gray-800 space-y-0.5 font-medium mt-4">

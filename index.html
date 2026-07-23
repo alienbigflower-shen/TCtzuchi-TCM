@@ -135,7 +135,7 @@
         category: 'chiefDepartment', 
         name: '', 
         note: '', 
-        deptName: '內一', 
+        deptName: '內科', 
         supervisorDoctor: '', 
         groupCode: 'A', 
         rotationDept: '內一' 
@@ -702,7 +702,7 @@
       const openEditPersonnelModal = (p) => {
         if (!isApproved) return;
 
-        let deptName = '內一';
+        let deptName = '內科';
         let supervisorDoctor = '';
         let groupCode = 'A';
         let rotationDept = '內一';
@@ -1186,7 +1186,7 @@
             </div>
           )}
 
-          {/* 4. 中醫部醫師陣容 (📌 需求：點擊即可編輯、專屬欄位排版) */}
+          {/* 4. 中醫部醫師陣容 */}
           {currentTab === 'personnel' && (
             <div class="bg-white p-5 md:p-8 rounded-2xl border shadow-sm space-y-6">
               <div class="flex justify-between items-center border-b pb-4">
@@ -1199,7 +1199,7 @@
                 {isApproved && (
                   <button 
                     onClick={() => {
-                      setNewPerson({ editId: null, category: 'chiefDepartment', name: '', note: '', deptName: '內一', supervisorDoctor: '', groupCode: 'A', rotationDept: '內一' });
+                      setNewPerson({ editId: null, category: 'chiefDepartment', name: '', note: '', deptName: '內科', supervisorDoctor: '', groupCode: 'A', rotationDept: '內一' });
                       setShowPersonnelModal(true);
                     }} 
                     class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold hover:bg-blue-700 shadow"
@@ -1268,7 +1268,7 @@
                   </div>
                 </div>
 
-                {/* 3. 各科住院醫師 (獨佔大列，包含：姓名、科別標籤、負責主治) */}
+                {/* 3. 各科住院醫師 (獨佔大列) */}
                 <div class="p-5 md:p-6 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-4 shadow-sm">
                   <h3 class="font-bold text-[22px] md:text-[26px] text-emerald-900 border-b border-emerald-200 pb-2">各科住院醫師</h3>
                   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1300,7 +1300,7 @@
                   </div>
                 </div>
 
-                {/* 4. 輪訓實習醫師 (獨佔大列，包含：姓名、組別 A-H、輪訓科別) */}
+                {/* 4. 輪訓實習醫師 (獨佔大列) */}
                 <div class="p-5 md:p-6 rounded-2xl bg-teal-50/80 border border-teal-200 space-y-4 shadow-sm">
                   <h3 class="font-bold text-[22px] md:text-[26px] text-teal-900 border-b border-teal-200 pb-2">輪訓實習醫師</h3>
                   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1676,15 +1676,15 @@
                     <input type="text" value={newPerson.name} onChange={e => setNewPerson({...newPerson, name: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required placeholder="如：張小明醫師" />
                   </div>
 
-                  {/* 邏輯 1：住院醫師專屬欄位 */}
+                  {/* 📌 住院醫師專屬欄位 (已更換為：內科、婦科、兒科、針灸科、傷科、家醫科) */}
                   {newPerson.category === 'residents' && (
                     <div class="space-y-3 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200">
                       <div>
                         <label class="block text-emerald-950 font-bold mb-1">所屬科別 (標籤)</label>
                         <select value={newPerson.deptName} onChange={e => setNewPerson({...newPerson, deptName: e.target.value})} class="w-full border rounded-xl p-2.5 bg-white font-bold">
-                          <option value="內一">內一</option>
-                          <option value="內二">內二</option>
-                          <option value="婦兒科">婦兒科</option>
+                          <option value="內科">內科</option>
+                          <option value="婦科">婦科</option>
+                          <option value="兒科">兒科</option>
                           <option value="針灸科">針灸科</option>
                           <option value="傷科">傷科</option>
                           <option value="家醫科">家醫科</option>
@@ -1697,7 +1697,7 @@
                     </div>
                   )}
 
-                  {/* 邏輯 2：實習醫師專屬欄位 */}
+                  {/* 實習醫師專屬欄位 */}
                   {newPerson.category === 'interns' && (
                     <div class="space-y-3 bg-teal-50/60 p-4 rounded-2xl border border-teal-200">
                       <div>

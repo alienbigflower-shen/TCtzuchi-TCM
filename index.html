@@ -94,6 +94,18 @@
       const [personnelList, setPersonnelList] = useState([]);
       const [courses, setCourses] = useState([]);
 
+      // 🎓 實習醫師全域受訓時間設定
+      const [batchDates, setBatchDates] = useState({
+        batch1: '2026.08.12 - 2026.09.13',
+        batch2: '2026.09.14 - 2026.10.13'
+      });
+
+      // 🪡 針灸科會診組專屬狀態
+      const [acupunctureConsultInfo, setAcupunctureConsultInfo] = useState({
+        trainees: '張醫師、陳醫師',
+        duration: '2026.08.01 - 2026.08.31'
+      });
+
       const [showEventModal, setShowEventModal] = useState(false);
       const [showRosterModal, setShowRosterModal] = useState(false);
       const [showBulletinModal, setShowBulletinModal] = useState(false);
@@ -138,7 +150,8 @@
         deptName: '內科', 
         supervisorDoctor: '', 
         groupCode: 'A', 
-        rotationDept: '內一' 
+        rotationDept: '內一',
+        batchNumber: '1'
       });
 
       const [newCourse, setNewCourse] = useState({
@@ -193,12 +206,23 @@
       };
 
       const parseInternNote = (note) => {
-        if (!note) return { group: 'A', dept: '內一' };
-        const parts = note.split('組 - ');
-        if (parts.length === 2) {
-          return { group: parts[0], dept: parts[1] };
+        if (!note) return { batch: '1', group: 'A', dept: '內一' };
+        let batch = '1';
+        let mainStr = note;
+
+        if (note.includes('｜')) {
+          const parts = note.split('｜');
+          if (parts[0].includes('組別') || parts[0].includes('梯次')) {
+            batch = parts[0].replace(/[^0-9]/g, '').trim() || '1';
+            mainStr = parts[1] || '';
+          }
         }
-        return { group: 'A', dept: note };
+
+        const groupParts = mainStr.split('組 - ');
+        if (groupParts.length === 2) {
+          return { batch, group: groupParts[0], dept: groupParts[1] };
+        }
+        return { batch, group: 'A', dept: mainStr };
       };
 
       useEffect(() => {
@@ -225,7 +249,6 @@
         return () => subscription.unsubscribe();
       }, []);
 
-      // 🔍 修正後的權限檢查機制 (大小寫不敏感 & 容錯)
       const checkApproval = async (email) => {
         if (!email) return setIsApproved(false);
         const cleanEmail = email.trim().toLowerCase();
@@ -662,7 +685,7 @@
         if (newPerson.category === 'residents') {
           noteString = `${newPerson.deptName}｜負責主治：${newPerson.supervisorDoctor || '無'}`;
         } else if (newPerson.category === 'interns') {
-          noteString = `${newPerson.groupCode}組 - ${newPerson.rotationDept}`;
+          noteString = `組別${newPerson.batchNumber || '1'}｜${newPerson.groupCode}組 - ${newPerson.rotationDept}`;
         }
 
         const payload = {
@@ -708,6 +731,7 @@
         let supervisorDoctor = '';
         let groupCode = 'A';
         let rotationDept = '內一';
+        let batchNumber = '1';
 
         if (p.category === 'residents' && p.note) {
           const resObj = parseResidentNote(p.note);
@@ -715,6 +739,7 @@
           supervisorDoctor = resObj.supervisor;
         } else if (p.category === 'interns' && p.note) {
           const intObj = parseInternNote(p.note);
+          batchNumber = intObj.batch;
           groupCode = intObj.group;
           rotationDept = intObj.dept;
         }
@@ -727,7 +752,8 @@
           deptName,
           supervisorDoctor,
           groupCode,
-          rotationDept
+          rotationDept,
+          batchNumber
         });
         setShowPersonnelModal(true);
       };
@@ -842,6 +868,25 @@
       const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
       const firstDayOfWeek = new Date(currentYear, currentMonth - 1, 1).getDay();
       const [focusY, focusM, focusD] = focusDate.split('-').map(Number);
+
+      // ⏱️ 計算並比較受訓日期（日期較早者自動排在前面）
+      const getStartDate = (dateRangeStr) => {
+        if (!dateRangeStr) return '9999.99.99';
+        const parts = dateRangeStr.split('-');
+        return parts[0] ? parts[0].trim() : '9999.99.99';
+      };
+
+      const isBatch1Earlier = getStartDate(batchDates.batch1) <= getStartDate(batchDates.batch2);
+
+      const sortedBatches = isBatch1Earlier
+        ? [
+            { id: '1', dateStr: batchDates.batch1 },
+            { id: '2', dateStr: batchDates.batch2 }
+          ]
+        : [
+            { id: '2', dateStr: batchDates.batch2 },
+            { id: '1', dateStr: batchDates.batch1 }
+          ];
 
       return (
         <div class="max-w-7xl mx-auto space-y-4 md:space-y-6">
@@ -1105,12 +1150,53 @@
                   )}
                 </div>
 
+                {/* 📌 科別選單（已刪除王老師打字診） */}
                 <div class="flex gap-2 pt-2 border-t overflow-x-auto no-scrollbar whitespace-nowrap">
-                  {['內一', '內二', '婦兒科', '傷科', '針灸科', '王老師打字診'].map(dept => (
+                  {['內一', '內二', '婦兒科', '傷科', '針灸科'].map(dept => (
                     <button key={dept} onClick={() => setSelectedDept(dept)} class={`px-4 py-2 rounded-xl text-[16px] md:text-[22px] font-bold border transition ${selectedDept === dept ? 'bg-blue-600 text-white border-blue-600 shadow' : 'bg-white text-gray-700'}`}>{dept}</button>
                   ))}
                 </div>
               </div>
+
+              {/* 🪡 針灸科專屬：會診組與受訓時間欄位 */}
+              {selectedDept === '針灸科' && (
+                <div class="bg-gradient-to-r from-purple-900 to-indigo-900 p-4 md:p-5 rounded-2xl text-white shadow-md space-y-3">
+                  <div class="flex items-center gap-2 border-b border-purple-700/60 pb-2">
+                    <span class="text-[20px]">🪡</span>
+                    <h3 class="font-bold text-[18px] md:text-[22px]">針灸科會診組資訊</h3>
+                  </div>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-[15px] md:text-[18px]">
+                    <div class="flex items-center gap-2 bg-white/10 p-3 rounded-xl border border-white/10">
+                      <span class="font-bold text-purple-200 whitespace-nowrap">會診組：</span>
+                      {isApproved ? (
+                        <input 
+                          type="text" 
+                          value={acupunctureConsultInfo.trainees} 
+                          onChange={e => setAcupunctureConsultInfo({...acupunctureConsultInfo, trainees: e.target.value})} 
+                          class="bg-white text-gray-900 px-3 py-1 rounded-lg font-bold w-full outline-none focus:ring-2 focus:ring-purple-400"
+                          placeholder="輸入受訓人，如：張醫師"
+                        />
+                      ) : (
+                        <span class="font-extrabold text-white">{acupunctureConsultInfo.trainees || '無'}</span>
+                      )}
+                    </div>
+                    <div class="flex items-center gap-2 bg-white/10 p-3 rounded-xl border border-white/10">
+                      <span class="font-bold text-purple-200 whitespace-nowrap">受訓時間：</span>
+                      {isApproved ? (
+                        <input 
+                          type="text" 
+                          value={acupunctureConsultInfo.duration} 
+                          onChange={e => setAcupunctureConsultInfo({...acupunctureConsultInfo, duration: e.target.value})} 
+                          class="bg-white text-gray-900 px-3 py-1 rounded-lg font-bold w-full outline-none focus:ring-2 focus:ring-purple-400"
+                          placeholder="輸入受訓時間，如：2026.08.01 - 2026.08.31"
+                        />
+                      ) : (
+                        <span class="font-extrabold text-white">{acupunctureConsultInfo.duration || '無'}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 電腦版 7 欄跟診月曆 */}
               <div class="hidden md:grid grid-cols-7 border-t border-l text-[20px] bg-white rounded-2xl overflow-hidden border">
@@ -1201,7 +1287,7 @@
                 {isApproved && (
                   <button 
                     onClick={() => {
-                      setNewPerson({ editId: null, category: 'chiefDepartment', name: '', note: '', deptName: '內科', supervisorDoctor: '', groupCode: 'A', rotationDept: '內一' });
+                      setNewPerson({ editId: null, category: 'chiefDepartment', name: '', note: '', deptName: '內科', supervisorDoctor: '', groupCode: 'A', rotationDept: '內一', batchNumber: '1' });
                       setShowPersonnelModal(true);
                     }} 
                     class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold hover:bg-blue-700 shadow"
@@ -1302,32 +1388,81 @@
                   </div>
                 </div>
 
-                {/* 4. 輪訓實習醫師 */}
-                <div class="p-5 md:p-6 rounded-2xl bg-teal-50/80 border border-teal-200 space-y-4 shadow-sm">
-                  <h3 class="font-bold text-[22px] md:text-[26px] text-teal-900 border-b border-teal-200 pb-2">輪訓實習醫師</h3>
-                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {personnelList.filter(p => p.category === 'interns').map(p => {
-                      const intData = parseInternNote(p.note);
+                {/* 4. 輪訓實習醫師 (僅保留「受訓區間：」，依受訓時間先後自動排序) */}
+                <div class="p-5 md:p-6 rounded-2xl bg-teal-50/80 border border-teal-200 space-y-5 shadow-sm">
+                  <div class="flex flex-wrap justify-between items-center border-b border-teal-200 pb-3 gap-3">
+                    <h3 class="font-bold text-[22px] md:text-[26px] text-teal-900">輪訓實習醫師</h3>
+                    
+                    {/* ⚙️ 受訓時間設定面板 */}
+                    <div class="flex flex-wrap items-center gap-2 text-[14px] md:text-[16px]">
+                      <div class="bg-white px-3 py-1.5 rounded-xl border border-teal-300 flex items-center gap-1">
+                        <span class="font-bold text-teal-800">受訓時間一：</span>
+                        {isApproved ? (
+                          <input type="text" value={batchDates.batch1} onChange={e => setBatchDates({...batchDates, batch1: e.target.value})} class="font-bold text-gray-800 border-b border-teal-400 outline-none w-44 px-1" />
+                        ) : (
+                          <span class="font-bold text-gray-800">{batchDates.batch1}</span>
+                        )}
+                      </div>
+                      <div class="bg-white px-3 py-1.5 rounded-xl border border-teal-300 flex items-center gap-1">
+                        <span class="font-bold text-teal-800">受訓時間二：</span>
+                        {isApproved ? (
+                          <input type="text" value={batchDates.batch2} onChange={e => setBatchDates({...batchDates, batch2: e.target.value})} class="font-bold text-gray-800 border-b border-teal-400 outline-none w-44 px-1" />
+                        ) : (
+                          <span class="font-bold text-gray-800">{batchDates.batch2}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 兩個受訓區間方框 */}
+                  <div class="space-y-6">
+                    {sortedBatches.map(b => {
+                      const batchInterns = personnelList.filter(p => p.category === 'interns' && parseInternNote(p.note).batch === b.id);
+
                       return (
-                        <div 
-                          key={p.id} 
-                          onClick={() => openEditPersonnelModal(p)} 
-                          class={`p-4 rounded-xl border bg-white space-y-2 transition shadow-sm ${isApproved ? 'hover:border-teal-500 hover:shadow-md cursor-pointer' : ''}`}
-                        >
+                        <div key={b.id} class="p-4 md:p-5 rounded-2xl bg-white border-2 border-teal-300 space-y-4 shadow-sm">
                           <div class="flex justify-between items-center border-b pb-2">
-                            <span class="font-extrabold text-[20px] text-gray-900">{p.name}</span>
-                            {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
+                            <div class="flex items-center gap-2">
+                              <span class="font-extrabold text-[18px] md:text-[22px] text-teal-950">
+                                受訓區間：{b.dateStr}
+                              </span>
+                            </div>
+                            <span class="text-[14px] font-bold text-gray-500">共 {batchInterns.length} 位</span>
                           </div>
-                          
-                          <div class="grid grid-cols-2 gap-2 text-[15px] font-bold">
-                            <div class="bg-blue-50 text-blue-900 p-2 rounded-lg border border-blue-200 text-center">
-                              <span class="text-gray-500 text-[12px] block font-normal">所屬組別</span>
-                              {intData.group} 組
-                            </div>
-                            <div class="bg-teal-50 text-teal-900 p-2 rounded-lg border border-teal-200 text-center">
-                              <span class="text-gray-500 text-[12px] block font-normal">輪訓科別</span>
-                              {intData.dept}
-                            </div>
+
+                          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {batchInterns.map(p => {
+                              const intData = parseInternNote(p.note);
+                              return (
+                                <div 
+                                  key={p.id} 
+                                  onClick={() => openEditPersonnelModal(p)} 
+                                  class={`p-4 rounded-xl border bg-teal-50/40 space-y-2 transition shadow-sm ${isApproved ? 'hover:border-teal-500 hover:shadow-md cursor-pointer' : ''}`}
+                                >
+                                  <div class="flex justify-between items-center border-b pb-2">
+                                    <span class="font-extrabold text-[20px] text-gray-900">{p.name}</span>
+                                    {isApproved && <button onClick={(e) => handleDeletePersonnel(e, p.id)} class="text-red-500 font-bold p-1 hover:bg-red-50 rounded">刪除</button>}
+                                  </div>
+                                  
+                                  <div class="grid grid-cols-2 gap-2 text-[15px] font-bold">
+                                    <div class="bg-white text-blue-900 p-2 rounded-lg border border-blue-200 text-center">
+                                      <span class="text-gray-500 text-[12px] block font-normal">所屬組別</span>
+                                      {intData.group} 組
+                                    </div>
+                                    <div class="bg-white text-teal-900 p-2 rounded-lg border border-teal-200 text-center">
+                                      <span class="text-gray-500 text-[12px] block font-normal">輪訓科別</span>
+                                      {intData.dept}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {batchInterns.length === 0 && (
+                              <div class="col-span-full text-center py-6 text-gray-400 font-bold text-[16px]">
+                                該受訓區間目前尚無成員
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -1702,6 +1837,13 @@
                   {/* 實習醫師專屬欄位 */}
                   {newPerson.category === 'interns' && (
                     <div class="space-y-3 bg-teal-50/60 p-4 rounded-2xl border border-teal-200">
+                      <div>
+                        <label class="block text-teal-950 font-bold mb-1">受訓時間區間</label>
+                        <select value={newPerson.batchNumber} onChange={e => setNewPerson({...newPerson, batchNumber: e.target.value})} class="w-full border rounded-xl p-2.5 bg-white font-bold">
+                          <option value="1">第一組受訓時間 ({batchDates.batch1})</option>
+                          <option value="2">第二組受訓時間 ({batchDates.batch2})</option>
+                        </select>
+                      </div>
                       <div>
                         <label class="block text-teal-950 font-bold mb-1">所屬組別 (A - H)</label>
                         <select value={newPerson.groupCode} onChange={e => setNewPerson({...newPerson, groupCode: e.target.value})} class="w-full border rounded-xl p-2.5 bg-white font-bold">

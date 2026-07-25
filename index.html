@@ -81,7 +81,7 @@
       const [loading, setLoading] = useState(true);
 
       const [currentTab, setCurrentTab] = useState('personnel');
-      const [calendarViewMode, setCalendarViewMode] = useState('month'); // 'list': 縱向模式, 'month': 月視圖模式
+      const [calendarViewMode, setCalendarViewMode] = useState('month'); 
 
       const [currentYear, setCurrentYear] = useState(todayObj.getFullYear());
       const [currentMonth, setCurrentMonth] = useState(todayObj.getMonth() + 1);
@@ -183,7 +183,6 @@
         return '';
       };
 
-      // 解析住院醫師的 note 格式
       const parseResidentNote = (note) => {
         if (!note) return { dept: '未指定', supervisor: '無' };
         const parts = note.split('｜負責主治：');
@@ -193,7 +192,6 @@
         };
       };
 
-      // 解析實習醫師的 note 格式
       const parseInternNote = (note) => {
         if (!note) return { group: 'A', dept: '內一' };
         const parts = note.split('組 - ');
@@ -227,6 +225,7 @@
         return () => subscription.unsubscribe();
       }, []);
 
+      // 🔍 修正後的權限檢查機制 (大小寫不敏感 & 容錯)
       const checkApproval = async (email) => {
         if (!email) return setIsApproved(false);
         const cleanEmail = email.trim().toLowerCase();
@@ -237,13 +236,16 @@
         }
 
         try {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('approved_users')
-            .select('email')
-            .ilike('email', cleanEmail)
-            .maybeSingle();
+            .select('email');
 
-          setIsApproved(!!data);
+          if (!error && data) {
+            const isMatch = data.some(item => item.email && item.email.trim().toLowerCase() === cleanEmail);
+            setIsApproved(isMatch);
+          } else {
+            setIsApproved(false);
+          }
         } catch (err) {
           console.error('Check approval error:', err);
           setIsApproved(false);
@@ -272,7 +274,7 @@
 
       const handleSaveEvent = async (e) => {
         e.preventDefault();
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
         if (!newEvent.title) return alert('請填寫事件標題！');
 
         const colorHex = getColorHex(newEvent.color);
@@ -367,7 +369,7 @@
       };
 
       const handleDeleteEvent = async (ev) => {
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
         
         if (ev.is_recurring) {
           const opt = prompt(`刪除每週固定事件【${ev.title}】\n\n[1] 僅刪除 ${ev.month}/${ev.day} 此單日事件\n[2] 批次刪除包含今日與後續所有相同事件`, "1");
@@ -590,7 +592,7 @@
 
       const handleDeleteRoster = async (e, shift, day) => {
         e.stopPropagation();
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
 
         const opt = prompt(
           `刪除【${shift.doctor} - ${shift.shift}】(${currentMonth}/${day}號)\n\n` +
@@ -635,7 +637,7 @@
 
       const handleAddBulletin = async (e) => {
         e.preventDefault();
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
         const item = { ...newBulletin, date: new Date().toISOString().split('T')[0] };
         const { data, error } = await supabase.from('bulletins').insert([item]).select();
         if (!error && data) setBulletins([data[0], ...bulletins]);
@@ -643,7 +645,7 @@
       };
 
       const handleDeleteBulletin = async (id) => {
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
         if (confirm('確定刪除此公告？')) {
           await supabase.from('bulletins').delete().eq('id', id);
           setBulletins(bulletins.filter(b => b.id !== id));
@@ -653,7 +655,7 @@
       // 🩺 儲存醫師陣容資料
       const handleSavePersonnel = async (e) => {
         e.preventDefault();
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
 
         let noteString = newPerson.note || '';
 
@@ -732,7 +734,7 @@
 
       const handleDeletePersonnel = async (e, id) => {
         e.stopPropagation();
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
         if (confirm('確定刪除該人員？')) {
           await supabase.from('personnel').delete().eq('id', id);
           setPersonnelList(personnelList.filter(p => p.id !== id));
@@ -741,7 +743,7 @@
 
       const handleSaveCourse = async (e) => {
         e.preventDefault();
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
 
         const payload = {
           is_scheduled: newCourse.isScheduled,
@@ -782,7 +784,7 @@
       };
 
       const handleToggleCourseConfirmed = async (course) => {
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
         const nextState = !course.is_confirmed;
         const { data, error } = await supabase
           .from('core_courses')
@@ -809,7 +811,7 @@
       };
 
       const handleDeleteCourse = async (id) => {
-        if (!isApproved) return alert('權限不足！');
+        if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
         if (confirm('確定刪除此課程？')) {
           await supabase.from('core_courses').delete().eq('id', id);
           setCourses(courses.filter(c => c.id !== id));
@@ -1210,7 +1212,7 @@
               </div>
 
               <div class="space-y-6">
-                {/* 1. 當月部總醫師 & 當月科總醫師 (雙欄併排) */}
+                {/* 1. 當月部總醫師 & 當月科總醫師 */}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* 部總 */}
                   <div class="p-5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-3 shadow-sm">
@@ -1239,7 +1241,7 @@
                   </div>
                 </div>
 
-                {/* 2. 專科輪訓醫師 & 外訓醫師 (雙欄併排) */}
+                {/* 2. 專科輪訓醫師 & 外訓醫師 */}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* 專科輪訓 */}
                   <div class="p-5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-3 shadow-sm">
@@ -1268,7 +1270,7 @@
                   </div>
                 </div>
 
-                {/* 3. 各科住院醫師 (獨佔大列) */}
+                {/* 3. 各科住院醫師 */}
                 <div class="p-5 md:p-6 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-4 shadow-sm">
                   <h3 class="font-bold text-[22px] md:text-[26px] text-emerald-900 border-b border-emerald-200 pb-2">各科住院醫師</h3>
                   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1300,7 +1302,7 @@
                   </div>
                 </div>
 
-                {/* 4. 輪訓實習醫師 (獨佔大列) */}
+                {/* 4. 輪訓實習醫師 */}
                 <div class="p-5 md:p-6 rounded-2xl bg-teal-50/80 border border-teal-200 space-y-4 shadow-sm">
                   <h3 class="font-bold text-[22px] md:text-[26px] text-teal-900 border-b border-teal-200 pb-2">輪訓實習醫師</h3>
                   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1653,7 +1655,7 @@
             </div>
           )}
 
-          {/* Modal：新增/修改 醫師 (📌 依類別動態呈現輸入欄位) */}
+          {/* Modal：新增/修改 醫師 */}
           {showPersonnelModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
@@ -1676,7 +1678,7 @@
                     <input type="text" value={newPerson.name} onChange={e => setNewPerson({...newPerson, name: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required placeholder="如：張小明醫師" />
                   </div>
 
-                  {/* 📌 住院醫師專屬欄位 (已更換為：內科、婦科、兒科、針灸科、傷科、家醫科) */}
+                  {/* 住院醫師專屬欄位 */}
                   {newPerson.category === 'residents' && (
                     <div class="space-y-3 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200">
                       <div>
@@ -1721,7 +1723,7 @@
                     </div>
                   )}
 
-                  {/* 一般備註 (針對總醫師/外訓等) */}
+                  {/* 一般備註 */}
                   {newPerson.category !== 'residents' && newPerson.category !== 'interns' && (
                     <div>
                       <label class="block text-gray-700 font-bold mb-1">備註說明 (可選)</label>

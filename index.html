@@ -93,12 +93,25 @@
       }
     };
 
+    // ⏰ 解析時間字串 (如 "07:30~08:20" 或 "12:30") 換算為當天分鐘數以進行自動排序
+    const parseStartTime = (timeStr) => {
+      if (!timeStr) return 9999;
+      const match = timeStr.match(/(\d{1,2})[:：](\d{2})/);
+      if (match) {
+        const hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        return hours * 60 + minutes;
+      }
+      return 9999;
+    };
+
     function App() {
       const todayStr = getTodayString();
       const todayObj = new Date();
 
       const [user, setUser] = useState(null);
       const [isApproved, setIsApproved] = useState(false);
+      const [userRole, setUserRole] = useState('user');
       const [loading, setLoading] = useState(true);
 
       const [currentTab, setCurrentTab] = useState('personnel');
@@ -271,6 +284,7 @@
             }
           } else {
             setIsApproved(false);
+            setUserRole('user');
           }
         });
 
@@ -279,28 +293,37 @@
       }, []);
 
       const checkApproval = async (email) => {
-        if (!email) return setIsApproved(false);
+        if (!email) {
+          setUserRole('user');
+          setIsApproved(false);
+          return;
+        }
         const cleanEmail = email.trim().toLowerCase();
 
         if (cleanEmail === 'alienbigflower@gmail.com') {
           setIsApproved(true);
+          setUserRole('admin');
           return;
         }
 
         try {
           const { data, error } = await supabase
             .from('approved_users')
-            .select('email');
+            .select('email, role')
+            .eq('email', cleanEmail)
+            .single();
 
           if (!error && data) {
-            const isMatch = data.some(item => item.email && item.email.trim().toLowerCase() === cleanEmail);
-            setIsApproved(isMatch);
+            setIsApproved(true);
+            setUserRole(data.role || 'admin');
           } else {
             setIsApproved(false);
+            setUserRole('user');
           }
         } catch (err) {
           console.error('Check approval error:', err);
           setIsApproved(false);
+          setUserRole('user');
         }
       };
 
@@ -808,7 +831,6 @@
         }
       };
 
-      // 📢 新增 / 編輯 公告儲存邏輯
       const handleSaveBulletin = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
@@ -1161,29 +1183,32 @@
                 </h3>
 
                 <div class="space-y-4">
-                  {events.filter(e => e.year === focusY && e.month === focusM && e.day === focusD).map(ev => {
-                    const presenterName = parsePresenter(ev.note);
-                    return (
-                      <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-4 md:p-6 rounded-2xl border-l-8 bg-gray-50 space-y-2 cursor-pointer hover:bg-gray-100 transition relative" style={{ borderColor: ev.color }}>
-                        <div class="text-[20px] md:text-[26px] font-bold text-gray-900 flex justify-between items-start">
-                          <span>{ev.title}</span>
-                          {ev.dept_tag && (
-                            <span class={`text-[11px] md:text-[12px] px-2 py-0.5 rounded-md font-bold border ${getDeptTagStyle(ev.dept_tag)}`}>
-                              {ev.dept_tag}
-                            </span>
-                          )}
+                  {events
+                    .filter(e => e.year === focusY && e.month === focusM && e.day === focusD)
+                    .sort((a, b) => parseStartTime(a.time) - parseStartTime(b.time)) // ⏰ 依據時間排序
+                    .map(ev => {
+                      const presenterName = parsePresenter(ev.note);
+                      return (
+                        <div key={ev.id} onClick={() => setSelectedEvent(ev)} class="p-4 md:p-6 rounded-2xl border-l-8 bg-gray-50 space-y-2 cursor-pointer hover:bg-gray-100 transition relative" style={{ borderColor: ev.color }}>
+                          <div class="text-[20px] md:text-[26px] font-bold text-gray-900 flex justify-between items-start">
+                            <span>{ev.title}</span>
+                            {ev.dept_tag && (
+                              <span class={`text-[11px] md:text-[12px] px-2 py-0.5 rounded-md font-bold border ${getDeptTagStyle(ev.dept_tag)}`}>
+                                {ev.dept_tag}
+                              </span>
+                            )}
+                          </div>
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[15px] md:text-[20px] text-gray-700">
+                            <div>與會者：<span class="font-bold">{ev.participants || '無'}</span></div>
+                            <div>時間：<span class="font-bold text-emerald-800">{ev.time}</span></div>
+                            <div>地點：<span class="font-bold">{ev.location || '無'}</span></div>
+                            <div>主持醫師：<span class="font-bold">{ev.instructor || '無'}</span></div>
+                            <div>報告醫師：<span class="font-bold">{presenterName || '無'}</span></div>
+                            <div>紀錄：<span class="font-bold text-emerald-900">{ev.recorder || '無'}</span></div>
+                          </div>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-[15px] md:text-[20px] text-gray-700">
-                          <div>與會者：<span class="font-bold">{ev.participants || '無'}</span></div>
-                          <div>時間：<span class="font-bold text-emerald-800">{ev.time}</span></div>
-                          <div>地點：<span class="font-bold">{ev.location || '無'}</span></div>
-                          <div>主持醫師：<span class="font-bold">{ev.instructor || '無'}</span></div>
-                          <div>報告醫師：<span class="font-bold">{presenterName || '無'}</span></div>
-                          <div>紀錄：<span class="font-bold text-emerald-900">{ev.recorder || '無'}</span></div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
 
                   {events.filter(e => e.year === focusY && e.month === focusM && e.day === focusD).length === 0 && (
                     <div class="text-[18px] md:text-[22px] text-gray-400 py-8 text-center">該日期尚無排定行程事件</div>
@@ -1230,12 +1255,15 @@
                 </div>
               </div>
 
-              {/* 📱 模式 1：縱向觀看模式 */}
+              {/* 📱 模式 1：縱向觀看模式 (⏰ 自動依時間排序) */}
               {calendarViewMode === 'list' && (
                 <div class="space-y-3">
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const day = i + 1;
-                    const dayEvents = events.filter(e => e.year === currentYear && e.month === currentMonth && e.day === day);
+                    const dayEvents = events
+                      .filter(e => e.year === currentYear && e.month === currentMonth && e.day === day)
+                      .sort((a, b) => parseStartTime(a.time) - parseStartTime(b.time)); // ⏰ 依據時間排序
+
                     if (dayEvents.length === 0) return null;
 
                     const dayOfWeekStr = ['日','一','二','三','四','五','六'][new Date(currentYear, currentMonth - 1, day).getDay()];
@@ -1288,7 +1316,7 @@
                 </div>
               )}
 
-              {/* 📅 模式 2：月觀看模式 */}
+              {/* 📅 模式 2：月觀看模式 (⏰ 自動依時間排序) */}
               {calendarViewMode === 'month' && (
                 <div class="overflow-x-auto no-scrollbar rounded-xl border border-gray-200 print-container">
                   <div class="min-w-[750px] grid grid-cols-7 text-[11px] md:text-[18px] print-table">
@@ -1300,7 +1328,10 @@
                     ))}
                     {Array.from({ length: daysInMonth }).map((_, i) => {
                       const day = i + 1;
-                      const dayEvents = events.filter(e => e.year === currentYear && e.month === currentMonth && e.day === day);
+                      const dayEvents = events
+                        .filter(e => e.year === currentYear && e.month === currentMonth && e.day === day)
+                        .sort((a, b) => parseStartTime(a.time) - parseStartTime(b.time)); // ⏰ 依據時間排序
+
                       return (
                         <div key={day} class="p-1.5 min-h-[110px] border-b border-r space-y-1.5 hover:bg-blue-50/20 transition print-cell">
                           <div class="font-bold text-gray-900 border-b pb-0.5">{day}日</div>
@@ -1409,7 +1440,7 @@
             </div>
           )}
 
-          {/* 3. 跟診表 (📌 支援單科別獨立月觀看模式列印，不跑版) */}
+          {/* 3. 跟診表 */}
           {currentTab === 'roster' && (
             <div class="space-y-4 md:space-y-6">
               <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-3">
@@ -1426,7 +1457,6 @@
                     {isApproved && (
                       <button onClick={() => { setNewRoster({ editId: null, day: focusD, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isTeaching: false, isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); }} class="bg-gray-900 text-white px-4 py-2 rounded-xl text-[15px] md:text-[18px] font-bold">⚙️ 排診 / 批次建立門診</button>
                     )}
-                    {/* 🖨️ 單科跟診表專屬列印按鈕 */}
                     <button onClick={() => window.print()} class="border border-gray-300 px-4 py-2 rounded-xl text-[15px] md:text-[18px] font-bold hover:bg-gray-100 flex items-center gap-1.5">
                       🖨️ 列印【{selectedDept}】跟診表
                     </button>
@@ -1490,7 +1520,7 @@
                 </div>
               )}
 
-              {/* 7 欄跟診月曆 (電腦與列印版) */}
+              {/* 7 欄跟診月曆 */}
               <div class="print-container">
                 <div class="grid grid-cols-7 border-t border-l text-[16px] md:text-[20px] bg-white rounded-2xl overflow-hidden border print-table">
                   {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map((d, i) => (
@@ -1890,7 +1920,7 @@
             </div>
           )}
 
-          {/* 7. 部上公佈欄 (📌 支援編輯與刪除) */}
+          {/* 7. 部上公佈欄 */}
           {currentTab === 'bulletin' && (
             <div class="bg-white p-5 md:p-6 rounded-2xl border shadow-sm space-y-4">
               <div class="flex justify-between items-center border-b pb-3">
@@ -1915,7 +1945,6 @@
                         )}
                       </h3>
                       
-                      {/* ✏️ 編輯與 🗑️ 刪除按鈕 */}
                       {isApproved && (
                         <div class="flex items-center gap-1.5 shrink-0">
                           <button 

@@ -12,7 +12,7 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    /* 🖨️ 專為全月列印優化的 CSS */
+    /* 🖨️ 列印優化 CSS */
     @media print {
       @page {
         size: landscape; /* 橫向滿版 */
@@ -27,17 +27,25 @@
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
       }
+      .print-container {
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+      }
       .print-table {
         border-collapse: collapse !important;
         width: 100% !important;
         min-width: 100% !important;
+        table-layout: fixed !important;
       }
       .print-cell {
-        border: 1px solid #d1d5db !important;
+        border: 1px solid #9ca3af !important;
         vertical-align: top !important;
         padding: 4px !important;
         height: auto !important; 
-        min-height: 110px !important;
+        min-height: 120px !important;
         page-break-inside: avoid !important;
         break-inside: avoid !important;
       }
@@ -72,7 +80,7 @@
       return `${year}-${month}-${day}`;
     };
 
-    // 🎨 科別 Tag 顏色對照表 (字體 11-12px，僅顏色無多餘說明)
+    // 🎨 科別 Tag 顏色對照表
     const getDeptTagStyle = (dept) => {
       switch (dept) {
         case '內科': return 'bg-yellow-400 text-yellow-950 border-yellow-500';
@@ -144,7 +152,7 @@
         presenter: '', 
         recorder: '', 
         color: '紅色', 
-        deptTag: '', // 🏷️ 科別 Tag
+        deptTag: '', 
         isRecurring: false, 
         weeklyDay: 1 
       });
@@ -161,7 +169,7 @@
         selectedSlots: [] 
       });
 
-      const [newBulletin, setNewBulletin] = useState({ title: '', content: '', author: '黃仲諄醫師', level: '普通' });
+      const [newBulletin, setNewBulletin] = useState({ editId: null, title: '', content: '', author: '黃仲諄醫師', level: '普通' });
       
       const [newPerson, setNewPerson] = useState({ 
         editId: null, 
@@ -311,17 +319,14 @@
         if (peData) {
           setPersonnelList(peData);
 
-          // 讀取住院醫師報告預定列表
           const reports = peData.filter(p => p.category === 'resident_report_schedule');
           setResidentReports(reports.map(r => ({ id: r.id, date: r.name, content: r.note })));
 
-          // 讀取針灸科會診組設定
           const acuSetting = peData.find(p => p.category === 'setting_acu_consult');
           if (acuSetting) {
             setAcuConsultInfo({ trainee: acuSetting.name || '', period: acuSetting.note || '' });
           }
 
-          // 讀取實習醫師受訓時間設定
           const batchSetting = peData.find(p => p.category === 'setting_batch_dates');
           if (batchSetting) {
             setBatchDates({ batch1: batchSetting.name || '', batch2: batchSetting.note || '' });
@@ -334,7 +339,6 @@
         setLoading(false);
       };
 
-      // 📝 住院醫師報告預定：新增項目
       const handleAddResidentReport = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！');
@@ -355,7 +359,6 @@
         }
       };
 
-      // 📝 住院醫師報告預定：刪除項目
       const handleDeleteResidentReport = async (id) => {
         if (!isApproved) return alert('權限不足！');
         if (confirm('確定刪除此預定項目？')) {
@@ -368,7 +371,6 @@
         }
       };
 
-      // 💾 儲存針灸科會診組資訊
       const handleSaveAcuConsultInfo = async () => {
         if (!isApproved) return alert('權限不足！');
 
@@ -392,7 +394,6 @@
         }
       };
 
-      // 💾 儲存實習醫師受訓時間
       const handleSaveBatchDates = async () => {
         if (!isApproved) return alert('權限不足！');
 
@@ -451,7 +452,15 @@
             }
           }
 
-          const { data, error } = await supabase.from('events').insert(batchItems).select();
+          let { data, error } = await supabase.from('events').insert(batchItems).select();
+
+          if (error && error.message.includes('dept_tag')) {
+            const fallbackBatch = batchItems.map(b => { const clone = {...b}; delete clone.dept_tag; return clone; });
+            const fbRes = await supabase.from('events').insert(fallbackBatch).select();
+            data = fbRes.data;
+            error = fbRes.error;
+          }
+
           if (error) {
             alert('批次新增失敗：' + error.message);
           } else if (data) {
@@ -478,7 +487,15 @@
           };
 
           if (newEvent.editId) {
-            const { data, error } = await supabase.from('events').update(item).eq('id', newEvent.editId).select();
+            let { data, error } = await supabase.from('events').update(item).eq('id', newEvent.editId).select();
+
+            if (error && error.message.includes('dept_tag')) {
+              delete item.dept_tag;
+              const fbRes = await supabase.from('events').update(item).eq('id', newEvent.editId).select();
+              data = fbRes.data;
+              error = fbRes.error;
+            }
+
             if (!error && data) {
               setEvents(events.map(ev => ev.id === newEvent.editId ? data[0] : ev));
               setSelectedEvent(data[0]);
@@ -487,7 +504,15 @@
               alert('更新失敗：' + error.message);
             }
           } else {
-            const { data, error } = await supabase.from('events').insert([item]).select();
+            let { data, error } = await supabase.from('events').insert([item]).select();
+
+            if (error && error.message.includes('dept_tag')) {
+              delete item.dept_tag;
+              const fbRes = await supabase.from('events').insert([item]).select();
+              data = fbRes.data;
+              error = fbRes.error;
+            }
+
             if (!error && data) {
               setEvents([...events, data[0]]);
               alert('事件新增成功！');
@@ -783,20 +808,62 @@
         }
       };
 
-      const handleAddBulletin = async (e) => {
+      // 📢 新增 / 編輯 公告儲存邏輯
+      const handleSaveBulletin = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
-        const item = { ...newBulletin, date: new Date().toISOString().split('T')[0] };
-        const { data, error } = await supabase.from('bulletins').insert([item]).select();
-        if (!error && data) setBulletins([data[0], ...bulletins]);
+
+        const item = { 
+          title: newBulletin.title, 
+          content: newBulletin.content, 
+          author: newBulletin.author || '黃仲諄醫師', 
+          level: newBulletin.level || '普通',
+          date: new Date().toISOString().split('T')[0] 
+        };
+
+        if (newBulletin.editId) {
+          const { data, error } = await supabase.from('bulletins').update(item).eq('id', newBulletin.editId).select();
+          if (!error && data) {
+            setBulletins(bulletins.map(b => b.id === newBulletin.editId ? data[0] : b));
+            alert('公告已更新！');
+          } else {
+            alert('更新公告失敗：' + error.message);
+          }
+        } else {
+          const { data, error } = await supabase.from('bulletins').insert([item]).select();
+          if (!error && data) {
+            setBulletins([data[0], ...bulletins]);
+            alert('公告已發布！');
+          } else {
+            alert('發布公告失敗：' + error.message);
+          }
+        }
+
         setShowBulletinModal(false);
+        setNewBulletin({ editId: null, title: '', content: '', author: '黃仲諄醫師', level: '普通' });
+      };
+
+      const openEditBulletinModal = (b) => {
+        if (!isApproved) return;
+        setNewBulletin({
+          editId: b.id,
+          title: b.title || '',
+          content: b.content || '',
+          author: b.author || '黃仲諄醫師',
+          level: b.level || '普通'
+        });
+        setShowBulletinModal(true);
       };
 
       const handleDeleteBulletin = async (id) => {
         if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
-        if (confirm('確定刪除此公告？')) {
-          await supabase.from('bulletins').delete().eq('id', id);
-          setBulletins(bulletins.filter(b => b.id !== id));
+        if (confirm('確定要刪除此公告嗎？')) {
+          const { error } = await supabase.from('bulletins').delete().eq('id', id);
+          if (!error) {
+            setBulletins(bulletins.filter(b => b.id !== id));
+          } else {
+            alert('刪除失敗：' + error.message);
+          }
         }
       };
 
@@ -1130,66 +1197,6 @@
           {currentTab === 'calendar' && (
             <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-4 md:space-y-6">
               
-              {/* 📌 1. 住院醫師報告預定方框 (字體 11-12px，可動態新增/刪除) */}
-              <div class="bg-indigo-50/80 border border-indigo-200 p-3 rounded-xl space-y-2 text-[11px] md:text-[12px]">
-                <div class="flex justify-between items-center border-b border-indigo-200 pb-1.5">
-                  <span class="font-extrabold text-indigo-950 text-[12px] md:text-[13px] flex items-center gap-1">
-                    <span>📌</span> 住院醫師報告預定
-                  </span>
-                  <span class="text-indigo-600 font-bold">共 {residentReports.length} 項預定</span>
-                </div>
-
-                {/* 新增欄位 (僅限總醫師/管理員) */}
-                {isApproved && (
-                  <form onSubmit={handleAddResidentReport} class="flex flex-wrap items-center gap-2 pt-1 border-b border-indigo-100 pb-2">
-                    <input 
-                      type="text" 
-                      value={newReport.date} 
-                      onChange={e => setNewReport({...newReport, date: e.target.value})} 
-                      placeholder="日期 (如 09.15)" 
-                      class="bg-white border rounded px-2 py-1 font-bold text-gray-800 w-24 outline-none focus:border-indigo-500"
-                    />
-                    <input 
-                      type="text" 
-                      value={newReport.content} 
-                      onChange={e => setNewReport({...newReport, content: e.target.value})} 
-                      placeholder="報告內容 / 醫師姓名" 
-                      class="bg-white border rounded px-2 py-1 font-bold text-gray-800 flex-1 min-w-[160px] outline-none focus:border-indigo-500"
-                    />
-                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded shadow">
-                      + 新增預定
-                    </button>
-                  </form>
-                )}
-
-                {/* 清單卡片 */}
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 pt-1">
-                  {residentReports.map(rep => (
-                    <div key={rep.id} class="bg-white p-2 rounded-lg border border-indigo-100 shadow-sm flex justify-between items-center gap-2">
-                      <div class="truncate">
-                        <span class="font-extrabold text-indigo-900 mr-1.5 border-r border-indigo-200 pr-1.5">{rep.date}</span>
-                        <span class="font-medium text-gray-800">{rep.content}</span>
-                      </div>
-                      {isApproved && (
-                        <button 
-                          onClick={() => handleDeleteResidentReport(rep.id)} 
-                          class="text-red-500 hover:text-red-700 font-bold text-[11px] p-0.5 shrink-0"
-                          title="刪除"
-                        >
-                          🗑️
-                        </button>
-                      )}
-                    </div>
-                  ))}
-
-                  {residentReports.length === 0 && (
-                    <div class="col-span-full text-center py-2 text-gray-400 font-bold">
-                      目前尚無預定報告紀錄
-                    </div>
-                  )}
-                </div>
-              </div>
-
               {/* 頂部月份切換與控制列 */}
               <div class="flex flex-wrap justify-between items-center gap-3">
                 <div class="flex items-center gap-3">
@@ -1223,7 +1230,7 @@
                 </div>
               </div>
 
-              {/* 📱 模式 1：縱向觀看模式 (含右下角 Tag) */}
+              {/* 📱 模式 1：縱向觀看模式 */}
               {calendarViewMode === 'list' && (
                 <div class="space-y-3">
                   {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -1261,7 +1268,6 @@
                                   <div>紀錄：<span class="font-bold text-gray-900">{ev.recorder || '無'}</span></div>
                                 </div>
 
-                                {/* 📌 右下角科別 Tag (純顏色標籤，字體 11-12px) */}
                                 {ev.dept_tag && (
                                   <div class="absolute bottom-2 right-2">
                                     <span class={`text-[11px] md:text-[12px] px-2 py-0.5 rounded-md font-extrabold border shadow-sm ${getDeptTagStyle(ev.dept_tag)}`}>
@@ -1282,9 +1288,9 @@
                 </div>
               )}
 
-              {/* 📅 模式 2：月觀看模式 (含右下角 Tag) */}
+              {/* 📅 模式 2：月觀看模式 */}
               {calendarViewMode === 'month' && (
-                <div class="overflow-x-auto no-scrollbar rounded-xl border border-gray-200">
+                <div class="overflow-x-auto no-scrollbar rounded-xl border border-gray-200 print-container">
                   <div class="min-w-[750px] grid grid-cols-7 text-[11px] md:text-[18px] print-table">
                     {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map((d, i) => (
                       <div key={d} class={`p-2 text-center font-bold border-b border-r bg-gray-50 ${i === 0 || i === 6 ? 'text-red-500' : 'text-gray-800'}`}>{d}</div>
@@ -1315,7 +1321,6 @@
                                 {ev.participants && <div class="text-gray-800">與會：{ev.participants}</div>}
                                 {ev.recorder && <div class="text-gray-800">紀錄：{ev.recorder}</div>}
 
-                                {/* 📌 右下角科別 Tag (純顏色標籤，字體 11-12px) */}
                                 {ev.dept_tag && (
                                   <div class="absolute bottom-1 right-1">
                                     <span class={`text-[11px] px-1.5 py-0.2 rounded font-extrabold border ${getDeptTagStyle(ev.dept_tag)}`}>
@@ -1342,32 +1347,99 @@
                 <div>&lt;傷&gt;輪訓傷科跟資深、當科主治醫師者需參加；</div>
                 <div>&lt;婦兒&gt;輪訓婦兒科跟資深、當科主治醫師者需參加；</div>
               </div>
+
+              {/* 住院醫師報告預定方框 */}
+              <div class="bg-indigo-50/90 border-2 border-indigo-200 p-4 md:p-5 rounded-2xl space-y-3 mt-6 shadow-sm">
+                <div class="flex justify-between items-center border-b border-indigo-200 pb-2">
+                  <span class="font-extrabold text-indigo-950 text-[15px] md:text-[17px] flex items-center gap-1.5">
+                    <span>📌</span> 住院醫師報告預定
+                  </span>
+                  <span class="text-indigo-700 font-bold text-[13px] md:text-[14px]">共 {residentReports.length} 項預定</span>
+                </div>
+
+                {isApproved && (
+                  <form onSubmit={handleAddResidentReport} class="flex flex-wrap items-center gap-2 pt-1 border-b border-indigo-100 pb-3 no-print">
+                    <input 
+                      type="text" 
+                      value={newReport.date} 
+                      onChange={e => setNewReport({...newReport, date: e.target.value})} 
+                      placeholder="日期 (如 09.15)" 
+                      class="bg-white border border-indigo-300 rounded-xl px-3 py-1.5 font-bold text-gray-900 w-28 text-[13px] md:text-[15px] outline-none focus:border-indigo-600"
+                    />
+                    <input 
+                      type="text" 
+                      value={newReport.content} 
+                      onChange={e => setNewReport({...newReport, content: e.target.value})} 
+                      placeholder="報告內容 / 醫師姓名" 
+                      class="bg-white border border-indigo-300 rounded-xl px-3 py-1.5 font-bold text-gray-900 flex-1 min-w-[200px] text-[13px] md:text-[15px] outline-none focus:border-indigo-600"
+                    />
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-1.5 rounded-xl text-[13px] md:text-[15px] shadow">
+                      + 新增預定
+                    </button>
+                  </form>
+                )}
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-1 text-[13px] md:text-[15px]">
+                  {residentReports.map(rep => (
+                    <div key={rep.id} class="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm flex justify-between items-center gap-2">
+                      <div class="truncate">
+                        <span class="font-extrabold text-indigo-900 mr-2 border-r border-indigo-200 pr-2">{rep.date}</span>
+                        <span class="font-bold text-gray-800">{rep.content}</span>
+                      </div>
+                      {isApproved && (
+                        <button 
+                          onClick={() => handleDeleteResidentReport(rep.id)} 
+                          class="text-red-500 hover:text-red-700 font-bold text-[13px] p-1 shrink-0 hover:bg-red-50 rounded no-print"
+                          title="刪除"
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {residentReports.length === 0 && (
+                    <div class="col-span-full text-center py-3 text-gray-400 font-bold text-[14px]">
+                      目前尚無預定報告紀錄
+                    </div>
+                  )}
+                </div>
+              </div>
+
             </div>
           )}
 
-          {/* 3. 跟診表 */}
+          {/* 3. 跟診表 (📌 支援單科別獨立月觀看模式列印，不跑版) */}
           {currentTab === 'roster' && (
             <div class="space-y-4 md:space-y-6">
               <div class="bg-white p-4 md:p-6 rounded-2xl border shadow-sm space-y-3">
                 <div class="flex flex-wrap justify-between items-center gap-3">
                   <div class="flex items-center gap-3">
-                    <button onClick={handlePrevMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold">◀ 上個月</button>
-                    <h2 class="text-[18px] md:text-[26px] font-bold text-gray-900">{currentYear} 年 {currentMonth} 月 跟診表</h2>
-                    <button onClick={handleNextMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold">下個月 ▶</button>
+                    <button onClick={handlePrevMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold no-print">◀ 上個月</button>
+                    <h2 class="text-[18px] md:text-[26px] font-bold text-gray-900">
+                      {currentYear} 年 {currentMonth} 月 跟診表 <span class="text-blue-600">({selectedDept})</span>
+                    </h2>
+                    <button onClick={handleNextMonth} class="px-3 py-1.5 border rounded-xl hover:bg-gray-50 text-[16px] md:text-[20px] font-bold no-print">下個月 ▶</button>
                   </div>
-                  {isApproved && (
-                    <button onClick={() => { setNewRoster({ editId: null, day: focusD, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isTeaching: false, isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); }} class="bg-gray-900 text-white px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold">⚙️ 排診 / 批次建立門診</button>
-                  )}
+                  
+                  <div class="flex items-center gap-2 no-print">
+                    {isApproved && (
+                      <button onClick={() => { setNewRoster({ editId: null, day: focusD, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isTeaching: false, isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); }} class="bg-gray-900 text-white px-4 py-2 rounded-xl text-[15px] md:text-[18px] font-bold">⚙️ 排診 / 批次建立門診</button>
+                    )}
+                    {/* 🖨️ 單科跟診表專屬列印按鈕 */}
+                    <button onClick={() => window.print()} class="border border-gray-300 px-4 py-2 rounded-xl text-[15px] md:text-[18px] font-bold hover:bg-gray-100 flex items-center gap-1.5">
+                      🖨️ 列印【{selectedDept}】跟診表
+                    </button>
+                  </div>
                 </div>
 
-                <div class="flex gap-2 pt-2 border-t overflow-x-auto no-scrollbar whitespace-nowrap">
+                <div class="flex gap-2 pt-2 border-t overflow-x-auto no-scrollbar whitespace-nowrap no-print">
                   {['內一', '內二', '婦兒科', '傷科', '針灸科'].map(dept => (
                     <button key={dept} onClick={() => setSelectedDept(dept)} class={`px-4 py-2 rounded-xl text-[16px] md:text-[22px] font-bold border transition ${selectedDept === dept ? 'bg-blue-600 text-white border-blue-600 shadow' : 'bg-white text-gray-700'}`}>{dept}</button>
                   ))}
                 </div>
               </div>
 
-              {/* 📌 當選到「針灸科」時，月曆上方呈現「會診組」欄位 */}
               {selectedDept === '針灸科' && (
                 <div class="bg-purple-900 text-white p-4 md:p-5 rounded-2xl shadow-md space-y-3">
                   <div class="flex justify-between items-center border-b border-purple-700/60 pb-2">
@@ -1377,7 +1449,7 @@
                     {isApproved && (
                       <button 
                         onClick={handleSaveAcuConsultInfo} 
-                        class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 rounded-xl font-bold text-[14px] md:text-[16px] shadow transition border border-purple-400/30"
+                        class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 rounded-xl font-bold text-[14px] md:text-[16px] shadow transition border border-purple-400/30 no-print"
                       >
                         💾 儲存資訊 (同步資料庫)
                       </button>
@@ -1418,79 +1490,51 @@
                 </div>
               )}
 
-              {/* 電腦版 7 欄跟診月曆 */}
-              <div class="hidden md:grid grid-cols-7 border-t border-l text-[20px] bg-white rounded-2xl overflow-hidden border">
-                {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map(d => (
-                  <div key={d} class="p-3 text-center font-bold border-b border-r bg-gray-50 text-gray-800">{d}</div>
-                ))}
-                {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-                  <div key={'e-' + i} class="p-2 min-h-[150px] border-b border-r bg-gray-50/20"></div>
-                ))}
-                {Array.from({ length: daysInMonth }).map((_, i) => {
-                  const day = i + 1;
-                  const allDayShifts = rosterShifts.filter(s => s.year === currentYear && s.month === currentMonth && s.day === day && s.dept === selectedDept)
-                    .sort((a, b) => ({ '早診': 1, '午診': 2, '晚診': 3 }[a.shift] - { '早診': 1, '午診': 2, '晚診': 3 }[b.shift]));
+              {/* 7 欄跟診月曆 (電腦與列印版) */}
+              <div class="print-container">
+                <div class="grid grid-cols-7 border-t border-l text-[16px] md:text-[20px] bg-white rounded-2xl overflow-hidden border print-table">
+                  {['週日', '週一', '週二', '週三', '週四', '週五', '週六'].map((d, i) => (
+                    <div key={d} class={`p-2 md:p-3 text-center font-bold border-b border-r bg-gray-50 ${i === 0 || i === 6 ? 'text-red-500' : 'text-gray-800'}`}>{d}</div>
+                  ))}
+                  {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+                    <div key={'e-' + i} class="p-2 min-h-[140px] border-b border-r bg-gray-50/20 print-cell"></div>
+                  ))}
+                  {Array.from({ length: daysInMonth }).map((_, i) => {
+                    const day = i + 1;
+                    const allDayShifts = rosterShifts.filter(s => s.year === currentYear && s.month === currentMonth && s.day === day && s.dept === selectedDept)
+                      .sort((a, b) => ({ '早診': 1, '午診': 2, '晚診': 3 }[a.shift] - { '早診': 1, '午診': 2, '晚診': 3 }[b.shift]));
 
-                  return (
-                    <div key={day} onClick={() => { if (isApproved) { setNewRoster({ editId: null, day: day, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isTeaching: false, isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); } }} class="p-2 min-h-[150px] border-b border-r space-y-2 hover:bg-blue-50/30 cursor-pointer">
-                      <div class="font-bold text-gray-800">{day}日</div>
-                      {allDayShifts.map(shift => (
-                        <div key={shift.id} onClick={(e) => handleCardClick(e, shift, day)} class={`border p-2 rounded-xl text-[16px] transition space-y-1 relative group ${getShiftStyle(shift.shift, shift.is_teaching)}`}>
-                          <div class="flex justify-between items-center font-bold">
-                            <span class="flex items-center gap-1">
-                              {shift.doctor} ({shift.shift})
-                              {shift.is_teaching && (
-                                <span class="text-[11px] bg-pink-600 text-white px-1.5 py-0.5 rounded font-bold">教學診</span>
+                    return (
+                      <div key={day} onClick={() => { if (isApproved) { setNewRoster({ editId: null, day: day, dept: selectedDept, shift: '早診', doctor: '伍崇弘醫師', studentName: '', isTeaching: false, isRecurring: false, selectedSlots: [] }); setShowRosterModal(true); } }} class="p-2 min-h-[140px] border-b border-r space-y-2 hover:bg-blue-50/30 cursor-pointer print-cell">
+                        <div class="font-bold text-gray-800 border-b pb-0.5">{day}日</div>
+                        {allDayShifts.map(shift => (
+                          <div key={shift.id} onClick={(e) => handleCardClick(e, shift, day)} class={`border p-2 rounded-xl text-[13px] md:text-[16px] transition space-y-1 relative group print-event-card ${getShiftStyle(shift.shift, shift.is_teaching)}`}>
+                            <div class="flex justify-between items-center font-bold">
+                              <span class="flex items-center gap-1">
+                                {shift.doctor} ({shift.shift})
+                                {shift.is_teaching && (
+                                  <span class="text-[10px] md:text-[11px] bg-pink-600 text-white px-1 py-0.2 rounded font-bold">教學診</span>
+                                )}
+                              </span>
+                              {isApproved && (
+                                <button 
+                                  onClick={(e) => handleDeleteRoster(e, shift, day)} 
+                                  class="text-red-500 hover:text-red-700 font-bold text-[13px] p-0.5 rounded hover:bg-red-100/50 transition no-print"
+                                  title="刪除單診或批次刪除"
+                                >
+                                  🗑️
+                                </button>
                               )}
-                            </span>
-                            {isApproved && (
-                              <button 
-                                onClick={(e) => handleDeleteRoster(e, shift, day)} 
-                                class="text-red-500 hover:text-red-700 font-bold text-[14px] p-0.5 rounded hover:bg-red-100/50 transition"
-                                title="刪除單診或批次刪除"
-                              >
-                                🗑️
-                              </button>
-                            )}
-                          </div>
-                          <div class="text-[14px]">跟診學員：{shift.students?.length ? shift.students.join('、') : ''}</div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* 手機版跟診表 */}
-              <div class="md:hidden space-y-3">
-                {Array.from({ length: daysInMonth }).map((_, i) => {
-                  const day = i + 1;
-                  const dayShifts = rosterShifts.filter(s => s.year === currentYear && s.month === currentMonth && s.day === day && s.dept === selectedDept);
-                  if (dayShifts.length === 0) return null;
-
-                  return (
-                    <div key={day} class="bg-white p-4 rounded-2xl border shadow-sm space-y-2">
-                      <div class="font-bold text-gray-800 text-[18px] border-b pb-2 flex justify-between items-center">
-                        <span>{currentMonth}月{day}日（週{['日','一','二','三','四','五','六'][new Date(currentYear, currentMonth-1, day).getDay()]}）</span>
-                      </div>
-                      <div class="space-y-2">
-                        {dayShifts.map(shift => (
-                          <div key={shift.id} onClick={(e) => handleCardClick(e, shift, day)} class={`p-3 rounded-xl border ${getShiftStyle(shift.shift, shift.is_teaching)}`}>
-                            <div class="flex justify-between items-center">
-                              <div class="font-bold text-[18px] flex items-center gap-2">
-                                <span>{shift.doctor}（{shift.shift}）</span>
-                                {shift.is_teaching && <span class="text-[12px] bg-pink-600 text-white px-2 py-0.5 rounded font-bold">教學診</span>}
-                              </div>
-                              {isApproved && <button onClick={(e) => handleDeleteRoster(e, shift, day)} class="text-red-500 font-bold p-1">🗑️</button>}
                             </div>
-                            <div class="text-[15px] opacity-90 mt-1 font-medium">跟診學員：{shift.students?.length ? shift.students.join('、') : ''}</div>
+                            <div class="text-[12px] md:text-[14px]">跟診學員：{shift.students?.length ? shift.students.join('、') : ''}</div>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
+
             </div>
           )}
 
@@ -1518,9 +1562,7 @@
               </div>
 
               <div class="space-y-6">
-                {/* 1. 當月部總醫師 & 當月科總醫師 */}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* 部總 */}
                   <div class="p-5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-3 shadow-sm">
                     <h3 class="font-bold text-[20px] md:text-[24px] text-blue-900 border-b border-blue-200 pb-2">當月部總醫師</h3>
                     <div class="space-y-2">
@@ -1533,7 +1575,6 @@
                     </div>
                   </div>
 
-                  {/* 科總 */}
                   <div class="p-5 rounded-2xl bg-indigo-50/80 border border-indigo-200 space-y-3 shadow-sm">
                     <h3 class="font-bold text-[20px] md:text-[24px] text-indigo-900 border-b border-indigo-200 pb-2">當月科總醫師</h3>
                     <div class="space-y-2">
@@ -1547,9 +1588,7 @@
                   </div>
                 </div>
 
-                {/* 2. 專科輪訓醫師 & 外訓醫師 */}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* 專科輪訓 */}
                   <div class="p-5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-3 shadow-sm">
                     <h3 class="font-bold text-[20px] md:text-[24px] text-amber-900 border-b border-amber-200 pb-2">專科輪訓醫師</h3>
                     <div class="space-y-2">
@@ -1562,7 +1601,6 @@
                     </div>
                   </div>
 
-                  {/* 外訓醫師 */}
                   <div class="p-5 rounded-2xl bg-purple-50/80 border border-purple-200 space-y-3 shadow-sm">
                     <h3 class="font-bold text-[20px] md:text-[24px] text-purple-900 border-b border-purple-200 pb-2">外訓醫師</h3>
                     <div class="space-y-2">
@@ -1576,7 +1614,6 @@
                   </div>
                 </div>
 
-                {/* 3. 各科住院醫師 */}
                 <div class="p-5 md:p-6 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-4 shadow-sm">
                   <h3 class="font-bold text-[22px] md:text-[26px] text-emerald-900 border-b border-emerald-200 pb-2">各科住院醫師</h3>
                   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1608,12 +1645,10 @@
                   </div>
                 </div>
 
-                {/* 4. 輪訓實習醫師 */}
                 <div class="p-5 md:p-6 rounded-2xl bg-teal-50/80 border border-teal-200 space-y-5 shadow-sm">
                   <div class="flex flex-wrap justify-between items-center border-b border-teal-200 pb-3 gap-3">
                     <h3 class="font-bold text-[22px] md:text-[26px] text-teal-900">輪訓實習醫師</h3>
                     
-                    {/* ⚙️ 受訓時間設定面板 */}
                     <div class="flex flex-wrap items-center gap-2 text-[14px] md:text-[16px]">
                       <div class="bg-white px-3 py-1.5 rounded-xl border border-teal-300 flex items-center gap-1">
                         <span class="font-bold text-teal-800">受訓時間一：</span>
@@ -1637,7 +1672,6 @@
                     </div>
                   </div>
 
-                  {/* 兩個受訓區間方框 */}
                   <div class="space-y-6">
                     {sortedBatches.map(b => {
                       const batchInterns = personnelList.filter(p => p.category === 'interns' && parseInternNote(p.note).batch === b.id);
@@ -1788,7 +1822,6 @@
               <div class="flex flex-wrap justify-between items-center border-b pb-4 gap-3">
                 <h2 class="text-[22px] md:text-[28px] font-bold text-gray-900">本院醫師重要規範</h2>
                 
-                {/* 規範子頁籤切換按鈕 */}
                 <div class="flex bg-gray-100 p-1.5 rounded-2xl border gap-1 text-[15px] md:text-[18px]">
                   <button 
                     onClick={() => setRulesSubTab('meeting')} 
@@ -1809,7 +1842,6 @@
                 </div>
               </div>
 
-              {/* 子頁面 1：會議規則 */}
               {rulesSubTab === 'meeting' && (
                 <div class="p-5 md:p-7 rounded-2xl border bg-gray-50 space-y-4 text-[16px] md:text-[20px] leading-relaxed text-gray-800">
                   <div class="font-bold text-[18px] md:text-[22px] text-gray-900 border-b pb-2">❖ 會議注意事項：</div>
@@ -1825,7 +1857,6 @@
                 </div>
               )}
 
-              {/* 子頁面 2：針灸科會診組跟診規則 */}
               {rulesSubTab === 'acu_rules' && (
                 <div class="p-5 md:p-7 rounded-2xl border bg-purple-50/60 border-purple-200 space-y-5">
                   <div class="font-bold text-[20px] md:text-[24px] text-purple-950 border-b border-purple-200 pb-3 flex items-center gap-2">
@@ -1859,20 +1890,63 @@
             </div>
           )}
 
-          {/* 7. 部上公佈欄 */}
+          {/* 7. 部上公佈欄 (📌 支援編輯與刪除) */}
           {currentTab === 'bulletin' && (
             <div class="bg-white p-5 md:p-6 rounded-2xl border shadow-sm space-y-4">
               <div class="flex justify-between items-center border-b pb-3">
-                <h2 class="text-[22px] md:text-[26px] font-bold text-gray-900">部上事務公佈欄</h2>
-                {isApproved && <button onClick={() => setShowBulletinModal(true)} class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[16px] md:text-[20px] font-bold">+ 發布公告</button>}
+                <h2 class="text-[20px] md:text-[24px] font-bold text-gray-900">部上事務公佈欄</h2>
+                {isApproved && (
+                  <button 
+                    onClick={() => { setNewBulletin({ editId: null, title: '', content: '', author: '黃仲諄醫師', level: '普通' }); setShowBulletinModal(true); }} 
+                    class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[14px] md:text-[18px] font-bold shadow hover:bg-blue-700"
+                  >
+                    + 發布公告
+                  </button>
+                )}
               </div>
               <div class="space-y-3">
                 {bulletins.map(item => (
-                  <div key={item.id} class={`p-4 rounded-2xl border space-y-2 ${item.level === '重要' ? 'bg-red-50/50 border-red-200' : 'bg-gray-50'}`}>
-                    <h3 class="font-bold text-[18px] md:text-[24px]">{item.title}</h3>
-                    <p class="text-[16px] md:text-[22px] text-gray-700 whitespace-pre-line">{item.content}</p>
+                  <div key={item.id} class={`p-3.5 md:p-4 rounded-2xl border space-y-1.5 relative transition ${item.level === '重要' ? 'bg-red-50/50 border-red-200' : 'bg-gray-50'}`}>
+                    <div class="flex justify-between items-start gap-2 border-b pb-1.5 border-gray-200/80">
+                      <h3 class="font-bold text-[15px] md:text-[19px] text-gray-900 flex items-center gap-2">
+                        <span>{item.title}</span>
+                        {item.level === '重要' && (
+                          <span class="text-[11px] bg-red-100 text-red-700 border border-red-300 font-bold px-2 py-0.5 rounded-full">重要</span>
+                        )}
+                      </h3>
+                      
+                      {/* ✏️ 編輯與 🗑️ 刪除按鈕 */}
+                      {isApproved && (
+                        <div class="flex items-center gap-1.5 shrink-0">
+                          <button 
+                            onClick={() => openEditBulletinModal(item)} 
+                            class="text-blue-600 hover:text-blue-800 font-bold text-[12px] md:text-[13px] px-2 py-1 rounded hover:bg-blue-50 transition flex items-center gap-1"
+                            title="編輯此公告"
+                          >
+                            <span>✏️</span>
+                            <span>編輯</span>
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteBulletin(item.id)} 
+                            class="text-red-500 hover:text-red-700 font-bold text-[12px] md:text-[13px] px-2 py-1 rounded hover:bg-red-100/50 transition flex items-center gap-1"
+                            title="刪除此公告"
+                          >
+                            <span>🗑️</span>
+                            <span>刪除</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <p class="text-[13px] md:text-[17px] text-gray-700 whitespace-pre-line leading-relaxed">{item.content}</p>
+                    {item.date && <div class="text-[11px] md:text-[12px] text-gray-400 text-right font-medium">發布日期：{item.date}</div>}
                   </div>
                 ))}
+
+                {bulletins.length === 0 && (
+                  <div class="text-center py-8 text-gray-400 font-bold text-[15px]">
+                    目前尚無發布公告
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1913,7 +1987,7 @@
             </div>
           )}
 
-          {/* Modal：排定/編輯事件 (含科別 Tag 選單) */}
+          {/* Modal：排定/編輯事件 */}
           {showEventModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-3 md:p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-6 md:p-8 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -1938,7 +2012,6 @@
                       </select>
                     </div>
 
-                    {/* 🏷️ 科別 Tag 選擇器 */}
                     <div>
                       <label class="block text-gray-700 font-bold mb-1">所屬科別 (Tag)</label>
                       <select value={newEvent.deptTag} onChange={e => setNewEvent({...newEvent, deptTag: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold">
@@ -2117,7 +2190,6 @@
                     <input type="text" value={newPerson.name} onChange={e => setNewPerson({...newPerson, name: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required placeholder="如：張小明醫師" />
                   </div>
 
-                  {/* 住院醫師專屬欄位 */}
                   {newPerson.category === 'residents' && (
                     <div class="space-y-3 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200">
                       <div>
@@ -2138,7 +2210,6 @@
                     </div>
                   )}
 
-                  {/* 實習醫師專屬欄位 */}
                   {newPerson.category === 'interns' && (
                     <div class="space-y-3 bg-teal-50/60 p-4 rounded-2xl border border-teal-200">
                       <div>
@@ -2169,7 +2240,6 @@
                     </div>
                   )}
 
-                  {/* 一般備註 */}
                   {newPerson.category !== 'residents' && newPerson.category !== 'interns' && (
                     <div>
                       <label class="block text-gray-700 font-bold mb-1">備註說明 (可選)</label>
@@ -2208,15 +2278,22 @@
             </div>
           )}
 
-          {/* Modal：公告 */}
+          {/* Modal：發布/編輯 公告 */}
           {showBulletinModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
-                <h3 class="font-bold text-[22px] text-gray-900 border-b pb-3">發布公告</h3>
-                <form onSubmit={handleAddBulletin} class="space-y-3">
-                  <div><label class="block text-gray-700 font-bold mb-1">標題</label><input type="text" value={newBulletin.title} onChange={e => setNewBulletin({...newBulletin, title: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" required /></div>
+                <h3 class="font-bold text-[22px] text-gray-900 border-b pb-3">{newBulletin.editId ? '✏️ 編輯公告' : '📢 發布公告'}</h3>
+                <form onSubmit={handleSaveBulletin} class="space-y-3">
+                  <div>
+                    <label class="block text-gray-700 font-bold mb-1">公告層級</label>
+                    <select value={newBulletin.level} onChange={e => setNewBulletin({...newBulletin, level: e.target.value})} class="w-full border rounded-xl p-2.5 bg-gray-50 font-bold">
+                      <option value="普通">普通公告</option>
+                      <option value="重要">重要公告 (紅底醒目)</option>
+                    </select>
+                  </div>
+                  <div><label class="block text-gray-700 font-bold mb-1">標題</label><input type="text" value={newBulletin.title} onChange={e => setNewBulletin({...newBulletin, title: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required /></div>
                   <div><label class="block text-gray-700 font-bold mb-1">內容</label><textarea value={newBulletin.content} onChange={e => setNewBulletin({...newBulletin, content: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 h-28" required></textarea></div>
-                  <div class="flex justify-end gap-3 pt-3"><button type="button" onClick={() => setShowBulletinModal(false)} class="px-5 py-2.5 border rounded-xl font-bold">取消</button><button type="submit" class="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl">發布</button></div>
+                  <div class="flex justify-end gap-3 pt-3"><button type="button" onClick={() => setShowBulletinModal(false)} class="px-5 py-2.5 border rounded-xl font-bold">取消</button><button type="submit" class="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl shadow">儲存變更</button></div>
                 </form>
               </div>
             </div>

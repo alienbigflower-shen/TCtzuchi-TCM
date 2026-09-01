@@ -93,6 +93,20 @@
       }
     };
 
+    // ⏰ 產生 15 分鐘間隔時間選單列表 (07:00 ~ 21:30)
+    const generateTimeOptions = () => {
+      const options = [];
+      for (let h = 7; h <= 21; h++) {
+        for (let m = 0; m < 60; m += 15) {
+          const hh = String(h).padStart(2, '0');
+          const mm = String(m).padStart(2, '0');
+          options.push(`${hh}:${mm}`);
+        }
+      }
+      return options;
+    };
+    const TIME_OPTIONS = generateTimeOptions();
+
     // ⏰ 解析時間字串進行自動排序
     const parseStartTime = (timeStr) => {
       if (!timeStr) return 9999;
@@ -154,14 +168,19 @@
       const [showCourseModal, setShowCourseModal] = useState(false);
       const [selectedEvent, setSelectedEvent] = useState(null);
 
+      // 📅 事件排定與時間選單狀態
       const [newEvent, setNewEvent] = useState({ 
         editId: null, 
         title: '', 
         participants: '', 
+        month: todayObj.getMonth() + 1,
         day: todayObj.getDate(), 
+        startTime: '08:00',
+        endTime: '09:00',
         time: '08:00~09:00', 
         location: '', 
-        instructor: '黃仲諄醫師', 
+        advisor: '', // 🩺 指導醫師欄位
+        instructor: '黃仲諄醫師', // 🩺 主持醫師欄位
         presenter: '', 
         recorder: '', 
         color: '紅色', 
@@ -327,7 +346,6 @@
         }
       };
 
-      // 🛠️ 關鍵修復：拉高 limit(5000) 突破 Supabase 1,000 筆抓取上限
       const fetchAllData = async () => {
         setLoading(true);
         const { data: evData } = await supabase.from('events').select('*').limit(5000);
@@ -441,29 +459,33 @@
         }
       };
 
+      // 💾 事件儲存邏輯 (包含指導醫師與時間下拉格式處理)
       const handleSaveEvent = async (e) => {
         e.preventDefault();
         if (!isApproved) return alert('權限不足！僅限管理醫師/總醫師操作');
         if (!newEvent.title) return alert('請填寫事件標題！');
 
         const colorHex = getColorHex(newEvent.color);
+        const eventMonth = parseInt(newEvent.month) || currentMonth;
+        const timeFormatted = `${newEvent.startTime}~${newEvent.endTime}`;
 
         if (newEvent.isRecurring && !newEvent.editId) {
           const targetDayOfWeek = parseInt(newEvent.weeklyDay);
-          const totalDays = new Date(currentYear, currentMonth, 0).getDate();
+          const totalDays = new Date(currentYear, eventMonth, 0).getDate();
           const batchItems = [];
 
           for (let d = 1; d <= totalDays; d++) {
-            const w = new Date(currentYear, currentMonth - 1, d).getDay();
+            const w = new Date(currentYear, eventMonth - 1, d).getDay();
             if (w === targetDayOfWeek) {
               batchItems.push({
                 year: currentYear,
-                month: currentMonth,
+                month: eventMonth,
                 day: d,
                 title: newEvent.title,
                 participants: newEvent.participants,
-                time: newEvent.time,
+                time: timeFormatted,
                 location: newEvent.location,
+                advisor: newEvent.advisor || '', // 🩺 指導醫師
                 instructor: newEvent.instructor,
                 note: newEvent.presenter ? `報告醫師：${newEvent.presenter}` : '',
                 recorder: newEvent.recorder,
@@ -478,8 +500,14 @@
 
           let { data, error } = await supabase.from('events').insert(batchItems).select();
 
-          if (error && error.message.includes('dept_tag')) {
-            const fallbackBatch = batchItems.map(b => { const clone = {...b}; delete clone.dept_tag; return clone; });
+          // 降級容錯（若 Supabase 缺 advisor 或 dept_tag 欄位）
+          if (error && (error.message.includes('dept_tag') || error.message.includes('advisor'))) {
+            const fallbackBatch = batchItems.map(b => {
+              const clone = {...b};
+              if (error.message.includes('dept_tag')) delete clone.dept_tag;
+              if (error.message.includes('advisor')) delete clone.advisor;
+              return clone;
+            });
             const fbRes = await supabase.from('events').insert(fallbackBatch).select();
             data = fbRes.data;
             error = fbRes.error;
@@ -489,17 +517,18 @@
             alert('批次新增失敗：' + error.message);
           } else if (data) {
             setEvents([...events, ...data]);
-            alert(`已成功批次建立當月所有【週${['日','一','二','三','四','五','六'][targetDayOfWeek]}】的事件！`);
+            alert(`已成功批次建立 ${eventMonth} 月所有【週${['日','一','二','三','四','五','六'][targetDayOfWeek]}】的事件！`);
           }
         } else {
           const item = {
             year: currentYear,
-            month: currentMonth,
+            month: eventMonth,
             day: parseInt(newEvent.day),
             title: newEvent.title,
             participants: newEvent.participants,
-            time: newEvent.time,
+            time: timeFormatted,
             location: newEvent.location,
+            advisor: newEvent.advisor || '', // 🩺 指導醫師
             instructor: newEvent.instructor,
             note: newEvent.presenter ? `報告醫師：${newEvent.presenter}` : '',
             recorder: newEvent.recorder,
@@ -507,14 +536,15 @@
             level: newEvent.color,
             dept_tag: newEvent.deptTag || null,
             is_recurring: false,
-            weekly_day: new Date(currentYear, currentMonth - 1, parseInt(newEvent.day)).getDay()
+            weekly_day: new Date(currentYear, eventMonth - 1, parseInt(newEvent.day)).getDay()
           };
 
           if (newEvent.editId) {
             let { data, error } = await supabase.from('events').update(item).eq('id', newEvent.editId).select();
 
-            if (error && error.message.includes('dept_tag')) {
-              delete item.dept_tag;
+            if (error && (error.message.includes('dept_tag') || error.message.includes('advisor'))) {
+              if (error.message.includes('dept_tag')) delete item.dept_tag;
+              if (error.message.includes('advisor')) delete item.advisor;
               const fbRes = await supabase.from('events').update(item).eq('id', newEvent.editId).select();
               data = fbRes.data;
               error = fbRes.error;
@@ -530,8 +560,9 @@
           } else {
             let { data, error } = await supabase.from('events').insert([item]).select();
 
-            if (error && error.message.includes('dept_tag')) {
-              delete item.dept_tag;
+            if (error && (error.message.includes('dept_tag') || error.message.includes('advisor'))) {
+              if (error.message.includes('dept_tag')) delete item.dept_tag;
+              if (error.message.includes('advisor')) delete item.advisor;
               const fbRes = await supabase.from('events').insert([item]).select();
               data = fbRes.data;
               error = fbRes.error;
@@ -551,9 +582,13 @@
           editId: null, 
           title: '', 
           participants: '', 
+          month: currentMonth,
           day: todayObj.getDate(), 
+          startTime: '08:00',
+          endTime: '09:00',
           time: '08:00~09:00', 
           location: '', 
+          advisor: '',
           instructor: '黃仲諄醫師', 
           presenter: '', 
           recorder: '', 
@@ -601,13 +636,30 @@
         if (ev.color === '#EAB308' || ev.color === '#FEF3C7' || ev.level === '黃色') colorName = '黃色';
         if (ev.color === '#10B981' || ev.color === '#D1FAE5' || ev.level === '綠色') colorName = '綠色';
 
+        // ⏰ 解析現有時間以填入開始與結束下拉選單
+        let startT = '08:00';
+        let endT = '09:00';
+        if (ev.time && ev.time.includes('~')) {
+          const parts = ev.time.split('~');
+          startT = parts[0].trim();
+          endT = parts[1].trim();
+        } else if (ev.time && ev.time.includes('-')) {
+          const parts = ev.time.split('-');
+          startT = parts[0].trim();
+          endT = parts[1].trim();
+        }
+
         setNewEvent({
           editId: ev.id,
           title: ev.title || '',
           participants: ev.participants || '',
+          month: ev.month || currentMonth,
           day: ev.day || 1,
-          time: ev.time || '',
+          startTime: startT,
+          endTime: endT,
+          time: ev.time || '08:00~09:00',
           location: ev.location || '',
+          advisor: ev.advisor || '', // 🩺 指導醫師
           instructor: ev.instructor || '',
           presenter: presenterVal,
           recorder: ev.recorder || '',
@@ -1101,6 +1153,9 @@
             { id: '1', dateStr: batchDates.batch1 }
           ];
 
+      // 計算 Modal 中所選月份的總天數
+      const daysInModalMonth = new Date(currentYear, parseInt(newEvent.month || currentMonth), 0).getDate();
+
       return (
         <div class="max-w-7xl mx-auto space-y-4 md:space-y-6">
           {/* Header */}
@@ -1203,6 +1258,7 @@
                             <div>與會者：<span class="font-bold">{ev.participants || '無'}</span></div>
                             <div>時間：<span class="font-bold text-emerald-800">{ev.time}</span></div>
                             <div>地點：<span class="font-bold">{ev.location || '無'}</span></div>
+                            <div>指導醫師：<span class="font-bold text-blue-900">{ev.advisor || '無'}</span></div>
                             <div>主持醫師：<span class="font-bold">{ev.instructor || '無'}</span></div>
                             <div>報告醫師：<span class="font-bold">{presenterName || '無'}</span></div>
                             <div>紀錄：<span class="font-bold text-emerald-900">{ev.recorder || '無'}</span></div>
@@ -1248,7 +1304,28 @@
                   </div>
 
                   {isApproved && (
-                    <button onClick={() => { setNewEvent({ editId: null, title: '', participants: '', day: focusD, time: '08:00~09:00', location: '', instructor: '黃仲諄醫師', presenter: '', recorder: '', color: '紅色', deptTag: '', isRecurring: false, weeklyDay: 1 }); setShowEventModal(true); }} class="bg-blue-600 text-white px-3 md:px-4 py-2 rounded-xl text-[14px] md:text-[20px] font-bold hover:bg-blue-700">+ 排定事件</button>
+                    <button onClick={() => { 
+                      setNewEvent({ 
+                        editId: null, 
+                        title: '', 
+                        participants: '', 
+                        month: currentMonth,
+                        day: focusD, 
+                        startTime: '08:00',
+                        endTime: '09:00',
+                        time: '08:00~09:00', 
+                        location: '', 
+                        advisor: '', // 🩺 指導醫師
+                        instructor: '黃仲諄醫師', 
+                        presenter: '', 
+                        recorder: '', 
+                        color: '紅色', 
+                        deptTag: '', 
+                        isRecurring: false, 
+                        weeklyDay: 1 
+                      }); 
+                      setShowEventModal(true); 
+                    }} class="bg-blue-600 text-white px-3 md:px-4 py-2 rounded-xl text-[14px] md:text-[20px] font-bold hover:bg-blue-700">+ 排定事件</button>
                   )}
                   <button onClick={() => window.print()} class="border border-gray-300 px-3 md:px-4 py-2 rounded-xl text-[14px] md:text-[20px] font-bold hover:bg-gray-100 flex items-center gap-1.5">
                     🖨️ 列印全月
@@ -1291,6 +1368,7 @@
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-1 text-[14px] md:text-[18px] text-gray-800 font-medium pt-1 pb-4">
                                   <div>時間：<span class="font-bold text-gray-900">{ev.time}</span></div>
                                   <div>地點：<span class="font-bold text-gray-900">{ev.location || '無'}</span></div>
+                                  <div>指導醫師：<span class="font-bold text-blue-900">{ev.advisor || '無'}</span></div>
                                   <div>主持醫師：<span class="font-bold text-gray-900">{ev.instructor || '無'}</span></div>
                                   <div>報告醫師：<span class="font-bold text-gray-900">{presenterName || '無'}</span></div>
                                   <div>與會人員：<span class="font-bold text-gray-900">{ev.participants || '無'}</span></div>
@@ -1348,6 +1426,7 @@
                                 <div class="text-[12px] md:text-[14px] border-b border-gray-400/40 pb-0.5 font-extrabold text-gray-900">{ev.title}</div>
                                 <div class="text-gray-900">時間：{ev.time}</div>
                                 {ev.location && <div class="text-gray-800">地點：{ev.location}</div>}
+                                {ev.advisor && <div class="text-blue-900 font-extrabold">指導：{ev.advisor}</div>}
                                 {ev.instructor && <div class="text-gray-800">主持：{ev.instructor}</div>}
                                 {presenterName && <div class="text-gray-800">報告：{presenterName}</div>}
                                 {ev.participants && <div class="text-gray-800">與會：{ev.participants}</div>}
@@ -1981,7 +2060,7 @@
             </div>
           )}
 
-          {/* Modal：事件詳情 */}
+          {/* Modal：事件詳情 (📌 新增指導醫師顯示) */}
           {selectedEvent && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 no-print" onClick={() => setSelectedEvent(null)}>
               <div class="bg-white rounded-3xl max-w-xl w-full p-6 md:p-8 space-y-4 shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -2000,6 +2079,7 @@
                   <div>與會者：<strong>{selectedEvent.participants || '無'}</strong></div>
                   <div>時間：<strong class="text-emerald-800">{selectedEvent.time}</strong></div>
                   <div>地點：<strong>{selectedEvent.location || '無'}</strong></div>
+                  <div>指導醫師：<strong class="text-blue-900">{selectedEvent.advisor || '無'}</strong></div>
                   <div>主持醫師：<strong>{selectedEvent.instructor || '無'}</strong></div>
                   <div>報告醫師：<strong>{parsePresenter(selectedEvent.note) || '無'}</strong></div>
                   <div>紀錄：<strong>{selectedEvent.recorder || '無'}</strong></div>
@@ -2017,7 +2097,7 @@
             </div>
           )}
 
-          {/* Modal：排定/編輯事件 */}
+          {/* Modal：排定/編輯事件 (📌 支援月份+日期選單、時間起訖下拉選單、指導醫師) */}
           {showEventModal && isApproved && (
             <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-3 md:p-4 z-50 no-print">
               <div class="bg-white rounded-3xl max-w-xl w-full p-6 md:p-8 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -2056,6 +2136,7 @@
                     </div>
                   </div>
 
+                  {/* 📌 日期與月份下拉選擇 */}
                   {newEvent.isRecurring ? (
                     <div>
                       <label class="block text-blue-900 font-bold mb-1">當月每週幾固定舉行？</label>
@@ -2064,17 +2145,73 @@
                       </select>
                     </div>
                   ) : (
-                    <div>
-                      <label class="block text-gray-700 font-bold mb-1">日期 (幾號)</label>
-                      <input type="number" min="1" max={daysInMonth} value={newEvent.day} onChange={e => setNewEvent({...newEvent, day: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" />
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-gray-700 font-bold mb-1">選擇月份</label>
+                        <select 
+                          value={newEvent.month} 
+                          onChange={e => setNewEvent({...newEvent, month: parseInt(e.target.value)})} 
+                          class="w-full border rounded-xl p-3 bg-gray-50 font-bold"
+                        >
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                            <option key={m} value={m}>{m} 月</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label class="block text-gray-700 font-bold mb-1">選擇日期</label>
+                        <select 
+                          value={newEvent.day} 
+                          onChange={e => setNewEvent({...newEvent, day: parseInt(e.target.value)})} 
+                          class="w-full border rounded-xl p-3 bg-gray-50 font-bold"
+                        >
+                          {Array.from({ length: daysInModalMonth }, (_, i) => i + 1).map(d => (
+                            <option key={d} value={d}>{d} 日</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   )}
 
+                  {/* 📌 時間起訖下拉選擇 (如 Google Calendar) */}
+                  <div>
+                    <label class="block text-gray-700 font-bold mb-1">活動時間 (開始 - 結束)</label>
+                    <div class="grid grid-cols-2 gap-3 items-center">
+                      <select 
+                        value={newEvent.startTime} 
+                        onChange={e => setNewEvent({...newEvent, startTime: e.target.value})} 
+                        class="w-full border rounded-xl p-3 bg-gray-50 font-bold"
+                      >
+                        {TIME_OPTIONS.map(t => (
+                          <option key={'s-' + t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                      <div class="flex items-center gap-2">
+                        <span class="text-gray-400 font-bold">至</span>
+                        <select 
+                          value={newEvent.endTime} 
+                          onChange={e => setNewEvent({...newEvent, endTime: e.target.value})} 
+                          class="w-full border rounded-xl p-3 bg-gray-50 font-bold"
+                        >
+                          {TIME_OPTIONS.map(t => (
+                            <option key={'e-' + t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
                   <div><label class="block text-gray-700 font-bold mb-1">標題</label><input type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" required placeholder="如：須彌山講座" /></div>
                   <div><label class="block text-gray-700 font-bold mb-1">與會者</label><input type="text" value={newEvent.participants} onChange={e => setNewEvent({...newEvent, participants: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：全體醫師、實習醫師" /></div>
-                  <div><label class="block text-gray-700 font-bold mb-1">時間</label><input type="text" value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50 font-bold" placeholder="如：07:30~08:30" /></div>
                   <div><label class="block text-gray-700 font-bold mb-1">地點</label><input type="text" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：第一會議室" /></div>
+                  
+                  {/* 📌 指導醫師 (在主持醫師上方) */}
+                  <div><label class="block text-blue-900 font-bold mb-1">指導醫師</label><input type="text" value={newEvent.advisor} onChange={e => setNewEvent({...newEvent, advisor: e.target.value})} class="w-full border rounded-xl p-3 bg-blue-50 font-bold" placeholder="如：黃仲諄主任、王人澍副院長" /></div>
+
+                  {/* 主持醫師 */}
                   <div><label class="block text-gray-700 font-bold mb-1">主持醫師</label><input type="text" value={newEvent.instructor} onChange={e => setNewEvent({...newEvent, instructor: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：黃仲諄主任" /></div>
+                  
                   <div><label class="block text-gray-700 font-bold mb-1">報告醫師</label><input type="text" value={newEvent.presenter} onChange={e => setNewEvent({...newEvent, presenter: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：張醫師" /></div>
                   <div><label class="block text-gray-700 font-bold mb-1">紀錄</label><input type="text" value={newEvent.recorder} onChange={e => setNewEvent({...newEvent, recorder: e.target.value})} class="w-full border rounded-xl p-3 bg-gray-50" placeholder="如：蕭醫師" /></div>
 

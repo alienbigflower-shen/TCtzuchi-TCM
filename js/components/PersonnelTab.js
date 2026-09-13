@@ -194,7 +194,13 @@ function PersonnelTab({
                 <div className="bg-white px-3 py-1.5 rounded-xl border border-teal-300 flex items-center gap-1">
                   <span className="font-bold text-teal-800">受訓時間一：</span>
                   {isApproved ? (
-                    <input type="text" value={batchDates.batch1} onChange={e => setBatchDates({...batchDates, batch1: e.target.value})} className="font-bold text-gray-800 border-b border-teal-400 outline-none w-44 px-1" />
+                    <input 
+                      type="text" 
+                      value={batchDates.batch1} 
+                      onChange={e => setBatchDates({...batchDates, batch1: e.target.value})} 
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSaveBatchDates(); } }}
+                      className="font-bold text-gray-800 border-b border-teal-400 outline-none w-44 px-1" 
+                    />
                   ) : (
                     <span className="font-bold text-gray-800">{batchDates.batch1}</span>
                   )}
@@ -202,7 +208,13 @@ function PersonnelTab({
                 <div className="bg-white px-3 py-1.5 rounded-xl border border-teal-300 flex items-center gap-1">
                   <span className="font-bold text-teal-800">受訓時間二：</span>
                   {isApproved ? (
-                    <input type="text" value={batchDates.batch2} onChange={e => setBatchDates({...batchDates, batch2: e.target.value})} className="font-bold text-gray-800 border-b border-teal-400 outline-none w-44 px-1" />
+                    <input 
+                      type="text" 
+                      value={batchDates.batch2} 
+                      onChange={e => setBatchDates({...batchDates, batch2: e.target.value})} 
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSaveBatchDates(); } }}
+                      className="font-bold text-gray-800 border-b border-teal-400 outline-none w-44 px-1" 
+                    />
                   ) : (
                     <span className="font-bold text-gray-800">{batchDates.batch2}</span>
                   )}

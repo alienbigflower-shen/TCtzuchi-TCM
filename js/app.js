@@ -30,13 +30,13 @@ function App() {
   const [newReport, setNewReport] = useState({ date: '', content: '' });
 
   const [batchDates, setBatchDates] = useState({
-    batch1: '2026.08.12 - 2026.09.13',
-    batch2: '2026.09.14 - 2026.10.13'
+    batch1: '',
+    batch2: ''
   });
 
   const [acuConsultInfo, setAcuConsultInfo] = useState({
-    trainee: '沈小花',
-    period: '2026.09.01 - 2026.09.30'
+    trainee: '',
+    period: ''
   });
 
   const [showEventModal, setShowEventModal] = useState(false);
@@ -261,19 +261,41 @@ function App() {
     const existing = personnelList.find(p => p.category === 'setting_acu_consult');
     const payload = {
       category: 'setting_acu_consult',
-      name: acuConsultInfo.trainee,
-      note: acuConsultInfo.period
+      name: (acuConsultInfo.trainee || '').trim(),
+      note: (acuConsultInfo.period || '').trim()
     };
 
-    if (existing) {
-      const { error } = await window.supabase.from('personnel').update(payload).eq('id', existing.id);
-      if (!error) alert('針灸科會診組資訊已更新儲存！');
-    } else {
-      const { data, error } = await window.supabase.from('personnel').insert([payload]).select();
-      if (!error && data) {
-        setPersonnelList([...personnelList, data[0]]);
-        alert('針灸科會診組資訊已建立並儲存！');
+    try {
+      if (existing) {
+        const { data, error } = await window.supabase
+          .from('personnel')
+          .update(payload)
+          .eq('id', existing.id)
+          .select();
+
+        if (error) {
+          alert('針灸科會診組資訊更新失敗：' + error.message);
+        } else if (!data || data.length === 0) {
+          alert('更新失敗：資料庫未更新任何紀錄，請確認權限是否足夠！');
+        } else {
+          setPersonnelList(personnelList.map(p => p.id === existing.id ? data[0] : p));
+          alert('針灸科會診組資訊已更新儲存！');
+        }
+      } else {
+        const { data, error } = await window.supabase
+          .from('personnel')
+          .insert([payload])
+          .select();
+
+        if (error) {
+          alert('針灸科會診組資訊建立失敗：' + error.message);
+        } else if (data && data[0]) {
+          setPersonnelList([...personnelList, data[0]]);
+          alert('針灸科會診組資訊已建立並儲存！');
+        }
       }
+    } catch (err) {
+      alert('儲存發生異常：' + (err.message || err));
     }
   };
 
@@ -284,19 +306,41 @@ function App() {
     const existing = personnelList.find(p => p.category === 'setting_batch_dates');
     const payload = {
       category: 'setting_batch_dates',
-      name: batchDates.batch1,
-      note: batchDates.batch2
+      name: (batchDates.batch1 || '').trim(),
+      note: (batchDates.batch2 || '').trim()
     };
 
-    if (existing) {
-      const { error } = await window.supabase.from('personnel').update(payload).eq('id', existing.id);
-      if (!error) alert('實習醫師受訓時間已更新儲存！');
-    } else {
-      const { data, error } = await window.supabase.from('personnel').insert([payload]).select();
-      if (!error && data) {
-        setPersonnelList([...personnelList, data[0]]);
-        alert('實習醫師受訓時間已建立並儲存！');
+    try {
+      if (existing) {
+        const { data, error } = await window.supabase
+          .from('personnel')
+          .update(payload)
+          .eq('id', existing.id)
+          .select();
+
+        if (error) {
+          alert('實習醫師受訓時間更新失敗：' + error.message);
+        } else if (!data || data.length === 0) {
+          alert('更新失敗：資料庫未更新任何紀錄，請確認權限是否足夠！');
+        } else {
+          setPersonnelList(personnelList.map(p => p.id === existing.id ? data[0] : p));
+          alert('實習醫師受訓時間已更新儲存！');
+        }
+      } else {
+        const { data, error } = await window.supabase
+          .from('personnel')
+          .insert([payload])
+          .select();
+
+        if (error) {
+          alert('實習醫師受訓時間建立失敗：' + error.message);
+        } else if (data && data[0]) {
+          setPersonnelList([...personnelList, data[0]]);
+          alert('實習醫師受訓時間已建立並儲存！');
+        }
       }
+    } catch (err) {
+      alert('儲存發生異常：' + (err.message || err));
     }
   };
 
@@ -1068,6 +1112,8 @@ function App() {
           onSaveAcuConsultInfo={handleSaveAcuConsultInfo}
           onCardClick={handleCardClick}
           onDeleteRoster={handleDeleteRoster}
+          personnelList={personnelList}
+          loading={loading}
         />
       )}
 

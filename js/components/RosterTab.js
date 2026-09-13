@@ -17,8 +17,15 @@ function RosterTab({
   setAcuConsultInfo,
   onSaveAcuConsultInfo,
   onCardClick,
-  onDeleteRoster
+  onDeleteRoster,
+  personnelList = [],
+  loading = false
 }) {
+  const savedAcu = (personnelList || []).find(p => p.category === 'setting_acu_consult');
+  const isAcuModified = savedAcu ? (
+    (acuConsultInfo?.trainee || '').trim() !== (savedAcu.name || '').trim() ||
+    (acuConsultInfo?.period || '').trim() !== (savedAcu.note || '').trim()
+  ) : Boolean((acuConsultInfo?.trainee || '').trim() || (acuConsultInfo?.period || '').trim());
   return (
     <div className="space-y-4 md:space-y-6">
       {/* 🖨️ 列印專用表頭 */}
@@ -116,8 +123,18 @@ function RosterTab({
                 <span>🪡</span> 針灸科會診組資訊
               </span>
               {isApproved && (
-                <button onClick={onSaveAcuConsultInfo} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-1.5 rounded-xl font-bold text-[14px] md:text-[16px] shadow transition border border-purple-400/30">
-                  💾 儲存資訊 (同步資料庫)
+                <button 
+                  onClick={onSaveAcuConsultInfo} 
+                  disabled={loading}
+                  className={`px-4 py-1.5 rounded-xl font-bold text-[14px] md:text-[16px] shadow transition border ${
+                    loading 
+                      ? 'bg-purple-800/60 text-purple-300 border-purple-600/30 cursor-not-allowed'
+                      : isAcuModified 
+                        ? 'bg-amber-600 hover:bg-amber-500 text-white border-amber-400/50 animate-pulse' 
+                        : 'bg-purple-600 hover:bg-purple-500 text-white border-purple-400/30'
+                  }`}
+                >
+                  {loading ? '載入中...' : isAcuModified ? '⚠️ 儲存變更 (Enter或點此)' : '💾 儲存資訊 (同步資料庫)'}
                 </button>
               )}
             </div>
@@ -130,11 +147,13 @@ function RosterTab({
                     type="text" 
                     value={acuConsultInfo.trainee} 
                     onChange={e => setAcuConsultInfo({...acuConsultInfo, trainee: e.target.value})} 
-                    className="bg-white border border-purple-300 rounded-lg px-3 py-1 font-bold text-gray-900 outline-none w-full"
-                    placeholder="輸入受訓人"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSaveAcuConsultInfo(); } }}
+                    disabled={loading}
+                    className="bg-white border border-purple-300 rounded-lg px-3 py-1 font-bold text-gray-900 outline-none w-full disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    placeholder={loading ? '資料載入中...' : '輸入受訓人 (按 Enter 即可儲存)'}
                   />
                 ) : (
-                  <span className="font-extrabold text-white">{acuConsultInfo.trainee || '未設定'}</span>
+                  <span className="font-extrabold text-white">{loading ? '載入中...' : (acuConsultInfo.trainee || '未設定')}</span>
                 )}
               </div>
 
@@ -145,11 +164,13 @@ function RosterTab({
                     type="text" 
                     value={acuConsultInfo.period} 
                     onChange={e => setAcuConsultInfo({...acuConsultInfo, period: e.target.value})} 
-                    className="bg-white border border-purple-300 rounded-lg px-3 py-1 font-bold text-gray-900 outline-none w-full"
-                    placeholder="輸入受訓時間"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onSaveAcuConsultInfo(); } }}
+                    disabled={loading}
+                    className="bg-white border border-purple-300 rounded-lg px-3 py-1 font-bold text-gray-900 outline-none w-full disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    placeholder={loading ? '資料載入中...' : '輸入受訓時間 (按 Enter 即可儲存)'}
                   />
                 ) : (
-                  <span className="font-extrabold text-white">{acuConsultInfo.period || '未設定'}</span>
+                  <span className="font-extrabold text-white">{loading ? '載入中...' : (acuConsultInfo.period || '未設定')}</span>
                 )}
               </div>
             </div>
